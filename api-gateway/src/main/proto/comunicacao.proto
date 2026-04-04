@@ -1,0 +1,42 @@
+syntax = "proto3";
+
+package precos;
+
+// Mensagem base para transmissão de preços
+message Preco {
+  string ativo = 1;
+  double valor = 2;
+  int64 timestamp = 3;
+}
+
+// Requisição do Gateway para Validador
+message ValidaPrecoRequest {
+  Preco preco = 1;
+}
+
+// Resposta do Validador
+message ValidaPrecoResponse {
+  bool valido = 1;
+  string mensagem = 2;
+}
+
+// Requisição do Gateway para Repositório
+message ArmazenaPrecoRequest {
+  Preco preco = 1;
+}
+
+// Resposta do Repositório
+message ArmazenaPrecoResponse {
+  bool sucesso = 1;
+  string mensagem = 2;
+}
+
+// Serviço do Validador
+service ValidadorPrecos {
+  rpc ValidarPreco (ValidaPrecoRequest) returns (ValidaPrecoResponse);
+}
+
+// Serviço do Repositório
+service RepositorioPrecos {
+  rpc ArmazenarPreco (ArmazenaPrecoRequest) returns (ArmazenaPrecoResponse);
+}
