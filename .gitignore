@@ -1,0 +1,15 @@
+# Ignorar pastas de compilação do Maven
+target/
+*.class
+*.jar
+
+# Ignorar arquivos de IDE (VS Code, IntelliJ, Eclipse)
+.vscode/
+.idea/
+*.iml
+.project
+.classpath
+.settings/
+
+# Ignorar logs e outros
+*.log

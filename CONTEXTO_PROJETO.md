@@ -30,3 +30,8 @@ O `api-gateway` deve implementar este padrão.
 ## 5. Estrutura de Dados Transmitida
 Para facilitar os sockets puros, os dados trafegados (exceto no gRPC) podem ser Strings simples ou JSON parseado via Jackson. 
 Estrutura base: `{ "ativo": "BTC", "valor": 65000.0, "timestamp": 1712250000 }`
+
+## 6. Padrões de Projeto
+Singleton para o heartbeat receiver
+Strategy para a seleção dinâmica de protocolo de comunicação ou aplicação
+Factory para instanciar os handlers, servidores, clientes, etc

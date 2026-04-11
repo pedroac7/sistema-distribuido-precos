@@ -2,14 +2,14 @@ syntax = "proto3";
 
 package precos;
 
-// Mensagem base para transmissão de preços
+// Mensagem base para transmissao de preços
 message Preco {
   string ativo = 1;
   double valor = 2;
   int64 timestamp = 3;
 }
 
-// Requisição do Gateway para Validador
+// Requisicao do Gateway para Validador
 message ValidaPrecoRequest {
   Preco preco = 1;
 }
@@ -20,23 +20,23 @@ message ValidaPrecoResponse {
   string mensagem = 2;
 }
 
-// Requisição do Gateway para Repositório
+// Requisicao do Gateway para Repositorio
 message ArmazenaPrecoRequest {
   Preco preco = 1;
 }
 
-// Resposta do Repositório
+// Resposta do Repositorio
 message ArmazenaPrecoResponse {
   bool sucesso = 1;
   string mensagem = 2;
 }
 
-// Serviço do Validador
+// Servico do Validador
 service ValidadorPrecos {
   rpc ValidarPreco (ValidaPrecoRequest) returns (ValidaPrecoResponse);
 }
 
-// Serviço do Repositório
+// Servico do Repositorio
 service RepositorioPrecos {
   rpc ArmazenarPreco (ArmazenaPrecoRequest) returns (ArmazenaPrecoResponse);
 }

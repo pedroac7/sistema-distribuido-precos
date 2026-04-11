@@ -1,9 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
-    <!-- Preencha o nome da sua pasta/projeto abaixo -->
     <artifactId>validador-precos</artifactId>
     <groupId>br.ufrn.distribuida</groupId>
     <version>1.0.0</version>
@@ -13,15 +13,12 @@
         <maven.compiler.source>21</maven.compiler.source>
         <maven.compiler.target>21</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <grpc.version>1.80.0</grpc.version>
+        <grpc.version>1.58.0</grpc.version>
         <protobuf.version>3.24.0</protobuf.version>
-        <grpc.java.version>1.80.0</grpc.java.version>
         <jackson.version>2.15.2</jackson.version>
-        <jakarta.annotation.version>2.1.1</jakarta.annotation.version>
     </properties>
 
     <dependencies>
-        <!-- gRPC dependencies -->
         <dependency>
             <groupId>io.grpc</groupId>
             <artifactId>grpc-netty-shaded</artifactId>
@@ -37,15 +34,11 @@
             <artifactId>grpc-stub</artifactId>
             <version>${grpc.version}</version>
         </dependency>
-
-        <!-- Jakarta Annotations (necessário para gRPC no Java 21) -->
         <dependency>
-            <groupId>jakarta.annotation</groupId>
-            <artifactId>jakarta.annotation-api</artifactId>
-            <version>${jakarta.annotation.version}</version>
+            <groupId>javax.annotation</groupId>
+            <artifactId>javax.annotation-api</artifactId>
+            <version>1.3.2</version>
         </dependency>
-
-        <!-- Jackson para manipulação de JSON -->
         <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>
             <artifactId>jackson-databind</artifactId>
@@ -54,22 +47,14 @@
     </dependencies>
 
     <build>
-        <plugins>
-            <!-- Plugin para detectar SO -->
-            <plugin>
+        <extensions>
+            <extension>
                 <groupId>kr.motd.maven</groupId>
                 <artifactId>os-maven-plugin</artifactId>
                 <version>1.7.0</version>
-                <executions>
-                    <execution>
-                        <goals>
-                            <goal>detect</goal>
-                        </goals>
-                    </execution>
-                </executions>
-            </plugin>
-
-            <!-- Plugin para compilar arquivos .proto -->
+            </extension>
+        </extensions>
+        <plugins>
             <plugin>
                 <groupId>org.xolstice.maven.plugins</groupId>
                 <artifactId>protobuf-maven-plugin</artifactId>
@@ -77,15 +62,7 @@
                 <configuration>
                     <protocArtifact>com.google.protobuf:protoc:${protobuf.version}:exe:${os.detected.classifier}</protocArtifact>
                     <pluginId>grpc-java</pluginId>
-                    <plugins>
-                        <plugin>
-                            <id>grpc-java</id>
-                            <groupId>io.grpc</groupId>
-                            <artifactId>protoc-gen-grpc-java</artifactId>
-                            <version>${grpc.java.version}</version>
-                            <classifier>${os.detected.classifier}</classifier>
-                        </plugin>
-                    </plugins>
+                    <pluginArtifact>io.grpc:protoc-gen-grpc-java:${grpc.version}:exe:${os.detected.classifier}</pluginArtifact>
                 </configuration>
                 <executions>
                     <execution>
