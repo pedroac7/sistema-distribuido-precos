@@ -1,20 +1,26 @@
 package heartbeat;
 
-import java.net.*;
+import io.grpc.Server;
+import io.grpc.ServerBuilder;
+import io.grpc.stub.StreamObserver;
+import precos.Comunicacao;
+import precos.HeartbeatGatewayGrpc;
+
+import java.net.DatagramPacket;
+import java.net.DatagramSocket;
+import java.net.ServerSocket;
+import java.net.Socket;
 import java.nio.charset.StandardCharsets;
+import java.util.Iterator;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.Iterator;
-
 
 public class HeartbeatReceiver {
     private static HeartbeatReceiver instance;
     private final int listenPort;
     private final String protocolo;
-    // Mapas separados
     private final Map<String, Long> validadores = new ConcurrentHashMap<>();
     private final Map<String, Long> repositorios = new ConcurrentHashMap<>();
-
 
     private HeartbeatReceiver(int listenPort, String protocolo) {
         this.listenPort = listenPort;
@@ -40,12 +46,11 @@ public class HeartbeatReceiver {
                 new Thread(this::listenHttp).start();
                 break;
             case "grpc":
-                System.out.println("HeartbeatReceiver: implemente o método gRPC no serviço do gateway.");
+                new Thread(this::listenGrpc).start();
                 break;
             default:
-                System.out.println("Protocolo de heartbeat não suportado: " + protocolo);
+                System.out.println("Protocolo de heartbeat nao suportado: " + protocolo);
         }
-        // Faxina
         new Thread(this::faxina).start();
     }
 
@@ -56,7 +61,7 @@ public class HeartbeatReceiver {
                 DatagramPacket packet = new DatagramPacket(buf, buf.length);
                 socket.receive(packet);
                 String msg = new String(packet.getData(), 0, packet.getLength(), StandardCharsets.UTF_8);
-                processHeartbeat(msg, packet.getAddress().getHostAddress());
+                processHeartbeat(msg);
             }
         } catch (Exception e) {
             e.printStackTrace();
@@ -69,9 +74,9 @@ public class HeartbeatReceiver {
                 try (Socket client = serverSocket.accept()) {
                     byte[] buf = client.getInputStream().readAllBytes();
                     String msg = new String(buf, StandardCharsets.UTF_8).trim();
-                    processHeartbeat(msg, client.getInetAddress().getHostAddress());
+                    processHeartbeat(msg);
                 } catch (Exception e) {
-                    // Ignora falhas de conexão
+                    // Ignora falhas de conexao
                 }
             }
         } catch (Exception e) {
@@ -84,15 +89,13 @@ public class HeartbeatReceiver {
             while (true) {
                 try (Socket client = serverSocket.accept()) {
                     HttpHeartbeatRequest request = readHttpRequest(client.getInputStream());
-                    String reqStr = request.requestLine();
-                    if (reqStr.startsWith("POST /heartbeat")) {
-                        processHeartbeatJson(request.body().trim(), client.getInetAddress().getHostAddress());
+                    if (request.requestLine().startsWith("POST /heartbeat")) {
+                        processHeartbeatJson(request.body().trim());
                     }
-                    // Responde HTTP 200 OK
                     String response = "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nOK";
                     client.getOutputStream().write(response.getBytes(StandardCharsets.UTF_8));
                 } catch (Exception e) {
-                    // Ignora falhas de conexão
+                    // Ignora falhas de conexao
                 }
             }
         } catch (Exception e) {
@@ -100,54 +103,70 @@ public class HeartbeatReceiver {
         }
     }
 
-    private void processHeartbeat(String msg, String ip) {
-        // Esperado: HEARTBEAT:ip:porta:tipo
+    private void listenGrpc() {
+        try {
+            Server server = ServerBuilder.forPort(listenPort)
+                    .addService(new HeartbeatGrpcService())
+                    .build()
+                    .start();
+
+            System.out.println("[Gateway] Servidor gRPC de heartbeat iniciado na porta " + listenPort);
+            Runtime.getRuntime().addShutdownHook(new Thread(server::shutdown, "gateway-heartbeat-grpc-shutdown"));
+            server.awaitTermination();
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    private void processHeartbeat(String msg) {
         if (msg.startsWith("HEARTBEAT:")) {
             String[] parts = msg.split(":");
             if (parts.length >= 4) {
-                String chave = parts[1] + ":" + parts[2];
-                String tipo = parts[3].toLowerCase();
-                if (tipo.contains("validador")) {
-                    validadores.put(chave, System.currentTimeMillis());
-                    System.out.println("[Gateway] Heartbeat recebido de VALIDADOR " + chave);
-                } else if (tipo.contains("repositorio")) {
-                    repositorios.put(chave, System.currentTimeMillis());
-                    System.out.println("[Gateway] Heartbeat recebido de REPOSITORIO " + chave);
-                } else {
-                    System.out.println("[Gateway] Heartbeat recebido de tipo desconhecido: " + tipo);
-                }
+                registerHeartbeat(parts[1], parts[2], parts[3], "Heartbeat");
             }
         }
     }
 
-    private void processHeartbeatJson(String json, String ip) {
-        // Esperado: {"ip":"...","port":...,"tipo":"..."}
-        String ipVal = extractJson(json, "ip");
+    private void processHeartbeatJson(String json) {
+        String hostVal = extractJson(json, "ip");
         String portVal = extractJson(json, "port");
         String tipoVal = extractJson(json, "tipo");
-        if (ipVal != null && portVal != null && tipoVal != null) {
-            String chave = ipVal + ":" + portVal;
-            String tipo = tipoVal.toLowerCase();
-            if (tipo.contains("validador")) {
-                validadores.put(chave, System.currentTimeMillis());
-                System.out.println("[Gateway] Heartbeat HTTP recebido de VALIDADOR " + chave);
-            } else if (tipo.contains("repositorio")) {
-                repositorios.put(chave, System.currentTimeMillis());
-                System.out.println("[Gateway] Heartbeat HTTP recebido de REPOSITORIO " + chave);
-            } else {
-                System.out.println("[Gateway] Heartbeat HTTP recebido de tipo desconhecido: " + tipo);
-            }
+        if (hostVal != null && portVal != null && tipoVal != null) {
+            registerHeartbeat(hostVal, portVal, tipoVal, "Heartbeat HTTP");
+        }
+    }
+
+    private void processHeartbeatGrpc(Comunicacao.HeartbeatRequest request) {
+        registerHeartbeat(request.getHost(), Integer.toString(request.getPort()), request.getTipo(), "Heartbeat gRPC");
+    }
+
+    private void registerHeartbeat(String host, String port, String tipoRaw, String canal) {
+        if (host == null || host.isBlank() || port == null || port.isBlank() || tipoRaw == null || tipoRaw.isBlank()) {
+            return;
+        }
+
+        String chave = host + ":" + port;
+        String tipo = tipoRaw.toLowerCase();
+        if (tipo.contains("validador")) {
+            validadores.put(chave, System.currentTimeMillis());
+            System.out.println("[Gateway] " + canal + " recebido de VALIDADOR " + chave);
+        } else if (tipo.contains("repositorio")) {
+            repositorios.put(chave, System.currentTimeMillis());
+            System.out.println("[Gateway] " + canal + " recebido de REPOSITORIO " + chave);
+        } else {
+            System.out.println("[Gateway] " + canal + " recebido de tipo desconhecido: " + tipo);
         }
     }
 
     private String extractJson(String json, String key) {
         String pattern = "\\\"" + key + "\\\"\\s*:\\s*\\\"?([^\\\"]+)\\\"?";
         java.util.regex.Matcher m = java.util.regex.Pattern.compile(pattern).matcher(json);
-        if (m.find()) return m.group(1);
+        if (m.find()) {
+            return m.group(1);
+        }
         return null;
     }
 
-    // Métodos para acessar as listas separadas
     public Map<String, Long> getValidadores() {
         return validadores;
     }
@@ -156,7 +175,6 @@ public class HeartbeatReceiver {
         return repositorios;
     }
 
-    // Faxina: remove instâncias "mortas"
     private void faxina() {
         while (true) {
             long agora = System.currentTimeMillis();
@@ -229,6 +247,20 @@ public class HeartbeatReceiver {
         }
 
         return new HttpHeartbeatRequest(requestLine, new String(bodyBytes, StandardCharsets.UTF_8));
+    }
+
+    private class HeartbeatGrpcService extends HeartbeatGatewayGrpc.HeartbeatGatewayImplBase {
+        @Override
+        public void registrarHeartbeat(Comunicacao.HeartbeatRequest request,
+                                       StreamObserver<Comunicacao.HeartbeatResponse> responseObserver) {
+            processHeartbeatGrpc(request);
+            Comunicacao.HeartbeatResponse response = Comunicacao.HeartbeatResponse.newBuilder()
+                    .setOk(true)
+                    .setMensagem("REGISTRADO")
+                    .build();
+            responseObserver.onNext(response);
+            responseObserver.onCompleted();
+        }
     }
 
     private record HttpHeartbeatRequest(String requestLine, String body) {

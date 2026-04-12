@@ -1,18 +1,26 @@
 package heartbeat;
 
-import java.net.*;
-import java.nio.charset.StandardCharsets;
+import io.grpc.ManagedChannel;
+import io.grpc.ManagedChannelBuilder;
+import io.grpc.StatusRuntimeException;
+import precos.Comunicacao;
+import precos.HeartbeatGatewayGrpc;
+
 import java.io.OutputStream;
 import java.io.PrintWriter;
+import java.net.DatagramPacket;
+import java.net.DatagramSocket;
+import java.net.InetAddress;
+import java.net.Socket;
+import java.nio.charset.StandardCharsets;
+import java.util.concurrent.TimeUnit;
 
-// Para gRPC, é necessário implementar o stub gerado pelo .proto
-// Aqui, deixamos um método stub para integração posterior
 public class HeartbeatSender implements Runnable {
     private final String gatewayHost;
     private final int gatewayPort;
     private final int servicePort;
     private final String protocolo;
-    private final String tipoEntidade; // "repositorio" ou "validador"
+    private final String tipoEntidade;
     private volatile boolean running = true;
 
     public HeartbeatSender(String gatewayHost, int gatewayPort, int servicePort, String protocolo, String tipoEntidade) {
@@ -44,7 +52,7 @@ public class HeartbeatSender implements Runnable {
                     sendGrpcHeartbeat();
                     break;
                 default:
-                    System.out.println("Protocolo de heartbeat não suportado: " + protocolo);
+                    System.out.println("Protocolo de heartbeat nao suportado: " + protocolo);
             }
         } catch (Exception e) {
             e.printStackTrace();
@@ -69,7 +77,7 @@ public class HeartbeatSender implements Runnable {
                 String msg = "HEARTBEAT:" + InetAddress.getLocalHost().getHostAddress() + ":" + servicePort + ":" + tipoEntidade + "\n";
                 socket.getOutputStream().write(msg.getBytes(StandardCharsets.UTF_8));
             } catch (Exception e) {
-                // Ignora falhas de conexão
+                // Ignora falhas de conexao
             }
             Thread.sleep(2000);
         }
@@ -79,35 +87,48 @@ public class HeartbeatSender implements Runnable {
         while (running) {
             try (Socket socket = new Socket(gatewayHost, gatewayPort)) {
                 String body = "{\"ip\":\"" + InetAddress.getLocalHost().getHostAddress() + "\",\"port\":" + servicePort + ",\"tipo\":\"" + tipoEntidade + "\"}";
-                String request = "POST /heartbeat HTTP/1.1\r\n" +
-                        "Host: " + gatewayHost + "\r\n" +
-                        "Content-Type: application/json\r\n" +
-                        "Content-Length: " + body.length() + "\r\n" +
-                        "Connection: close\r\n\r\n" +
-                        body;
+                String request = "POST /heartbeat HTTP/1.1\r\n"
+                        + "Host: " + gatewayHost + "\r\n"
+                        + "Content-Type: application/json\r\n"
+                        + "Content-Length: " + body.length() + "\r\n"
+                        + "Connection: close\r\n\r\n"
+                        + body;
                 OutputStream os = socket.getOutputStream();
                 PrintWriter pw = new PrintWriter(os, true);
                 pw.print(request);
                 pw.flush();
             } catch (Exception e) {
-                // Ignora falhas de conexão
+                // Ignora falhas de conexao
             }
             Thread.sleep(2000);
         }
     }
 
-    private void sendGrpcHeartbeat() {
-        // Aqui você deve implementar a chamada gRPC para o método Heartbeat do Gateway
-        // Exemplo (pseudo-código):
-        // while (running) {
-        //     HeartbeatRequest req = HeartbeatRequest.newBuilder()
-        //         .setIp(InetAddress.getLocalHost().getHostAddress())
-        //         .setPort(servicePort)
-        //         .setTipo(tipoEntidade)
-        //         .build();
-        //     gatewayStub.heartbeat(req);
-        //     Thread.sleep(2000);
-        // }
-        System.out.println("Heartbeat gRPC: implementar integração com stub gerado pelo .proto");
+    private void sendGrpcHeartbeat() throws Exception {
+        ManagedChannel channel = ManagedChannelBuilder.forAddress(gatewayHost, gatewayPort)
+                .usePlaintext()
+                .build();
+
+        try {
+            HeartbeatGatewayGrpc.HeartbeatGatewayBlockingStub stub = HeartbeatGatewayGrpc.newBlockingStub(channel)
+                    .withDeadlineAfter(1000, TimeUnit.MILLISECONDS);
+
+            while (running) {
+                try {
+                    stub.registrarHeartbeat(
+                            Comunicacao.HeartbeatRequest.newBuilder()
+                                    .setHost(InetAddress.getLocalHost().getHostAddress())
+                                    .setPort(servicePort)
+                                    .setTipo(tipoEntidade)
+                                    .build()
+                    );
+                } catch (StatusRuntimeException e) {
+                    // Ignora falhas de conexao
+                }
+                Thread.sleep(2000);
+            }
+        } finally {
+            channel.shutdownNow();
+        }
     }
 }
