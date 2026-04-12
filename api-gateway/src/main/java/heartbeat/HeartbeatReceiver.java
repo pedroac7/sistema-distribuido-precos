@@ -83,19 +83,10 @@ public class HeartbeatReceiver {
         try (ServerSocket serverSocket = new ServerSocket(listenPort)) {
             while (true) {
                 try (Socket client = serverSocket.accept()) {
-                    StringBuilder request = new StringBuilder();
-                    int c;
-                    while ((c = client.getInputStream().read()) != -1) {
-                        request.append((char) c);
-                        if (request.toString().contains("\r\n\r\n")) break;
-                    }
-                    String reqStr = request.toString();
+                    HttpHeartbeatRequest request = readHttpRequest(client.getInputStream());
+                    String reqStr = request.requestLine();
                     if (reqStr.startsWith("POST /heartbeat")) {
-                        int idx = reqStr.indexOf("\r\n\r\n");
-                        if (idx != -1) {
-                            String body = reqStr.substring(idx + 4).trim();
-                            processHeartbeatJson(body, client.getInetAddress().getHostAddress());
-                        }
+                        processHeartbeatJson(request.body().trim(), client.getInetAddress().getHostAddress());
                     }
                     // Responde HTTP 200 OK
                     String response = "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nOK";
@@ -188,5 +179,58 @@ public class HeartbeatReceiver {
                 it.remove();
             }
         }
+    }
+
+    private HttpHeartbeatRequest readHttpRequest(java.io.InputStream inputStream) throws java.io.IOException {
+        java.io.ByteArrayOutputStream buffer = new java.io.ByteArrayOutputStream();
+        int matched = 0;
+
+        while (true) {
+            int value = inputStream.read();
+            if (value == -1) {
+                throw new java.io.IOException("CABECALHO_HTTP_INCOMPLETO");
+            }
+
+            buffer.write(value);
+            if ((matched == 0 && value == '\r')
+                    || (matched == 1 && value == '\n')
+                    || (matched == 2 && value == '\r')
+                    || (matched == 3 && value == '\n')) {
+                matched++;
+                if (matched == 4) {
+                    break;
+                }
+            } else {
+                matched = value == '\r' ? 1 : 0;
+            }
+        }
+
+        byte[] rawHeader = buffer.toByteArray();
+        String headerText = new String(rawHeader, 0, rawHeader.length - 4, StandardCharsets.UTF_8);
+        String[] lines = headerText.split("\r\n");
+        String requestLine = lines.length == 0 ? "" : lines[0];
+
+        int contentLength = 0;
+        for (int i = 1; i < lines.length; i++) {
+            String line = lines[i];
+            int separator = line.indexOf(':');
+            if (separator > 0) {
+                String name = line.substring(0, separator).trim().toLowerCase();
+                String value = line.substring(separator + 1).trim();
+                if ("content-length".equals(name)) {
+                    contentLength = Integer.parseInt(value);
+                }
+            }
+        }
+
+        byte[] bodyBytes = inputStream.readNBytes(contentLength);
+        if (bodyBytes.length != contentLength) {
+            throw new java.io.IOException("BODY_HTTP_INCOMPLETO");
+        }
+
+        return new HttpHeartbeatRequest(requestLine, new String(bodyBytes, StandardCharsets.UTF_8));
+    }
+
+    private record HttpHeartbeatRequest(String requestLine, String body) {
     }
 }

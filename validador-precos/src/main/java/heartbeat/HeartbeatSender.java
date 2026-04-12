@@ -10,15 +10,15 @@ import java.io.PrintWriter;
 public class HeartbeatSender implements Runnable {
     private final String gatewayHost;
     private final int gatewayPort;
-    private final int localPort;
+    private final int servicePort;
     private final String protocolo;
     private final String tipoEntidade; // "validador" ou "repositorio"
     private volatile boolean running = true;
 
-    public HeartbeatSender(String gatewayHost, int gatewayPort, int localPort, String protocolo, String tipoEntidade) {
+    public HeartbeatSender(String gatewayHost, int gatewayPort, int servicePort, String protocolo, String tipoEntidade) {
         this.gatewayHost = gatewayHost;
         this.gatewayPort = gatewayPort;
-        this.localPort = localPort;
+        this.servicePort = servicePort;
         this.protocolo = protocolo;
         this.tipoEntidade = tipoEntidade;
     }
@@ -54,7 +54,7 @@ public class HeartbeatSender implements Runnable {
     private void sendUdpHeartbeat() throws Exception {
         DatagramSocket socket = new DatagramSocket();
         while (running) {
-            String msg = "HEARTBEAT:" + InetAddress.getLocalHost().getHostAddress() + ":" + localPort + ":" + tipoEntidade;
+            String msg = "HEARTBEAT:" + InetAddress.getLocalHost().getHostAddress() + ":" + servicePort + ":" + tipoEntidade;
             byte[] buf = msg.getBytes(StandardCharsets.UTF_8);
             DatagramPacket packet = new DatagramPacket(buf, buf.length, InetAddress.getByName(gatewayHost), gatewayPort);
             socket.send(packet);
@@ -66,7 +66,7 @@ public class HeartbeatSender implements Runnable {
     private void sendTcpHeartbeat() throws Exception {
         while (running) {
             try (Socket socket = new Socket(gatewayHost, gatewayPort)) {
-                String msg = "HEARTBEAT:" + InetAddress.getLocalHost().getHostAddress() + ":" + localPort + ":" + tipoEntidade + "\n";
+                String msg = "HEARTBEAT:" + InetAddress.getLocalHost().getHostAddress() + ":" + servicePort + ":" + tipoEntidade + "\n";
                 socket.getOutputStream().write(msg.getBytes(StandardCharsets.UTF_8));
             } catch (Exception e) {
                 // Ignora falhas de conexão
@@ -78,7 +78,7 @@ public class HeartbeatSender implements Runnable {
     private void sendHttpHeartbeat() throws Exception {
         while (running) {
             try (Socket socket = new Socket(gatewayHost, gatewayPort)) {
-                String body = "{\"ip\":\"" + InetAddress.getLocalHost().getHostAddress() + "\",\"port\":" + localPort + ",\"tipo\":\"" + tipoEntidade + "\"}";
+                String body = "{\"ip\":\"" + InetAddress.getLocalHost().getHostAddress() + "\",\"port\":" + servicePort + ",\"tipo\":\"" + tipoEntidade + "\"}";
                 String request = "POST /heartbeat HTTP/1.1\r\n" +
                         "Host: " + gatewayHost + "\r\n" +
                         "Content-Type: application/json\r\n" +
@@ -102,7 +102,7 @@ public class HeartbeatSender implements Runnable {
         // while (running) {
         //     HeartbeatRequest req = HeartbeatRequest.newBuilder()
         //         .setIp(InetAddress.getLocalHost().getHostAddress())
-        //         .setPort(localPort)
+        //         .setPort(servicePort)
         //         .setTipo(tipoEntidade)
         //         .build();
         //     gatewayStub.heartbeat(req);
