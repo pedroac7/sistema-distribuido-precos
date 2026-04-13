@@ -110,12 +110,11 @@ public class HeartbeatSender implements Runnable {
                 .build();
 
         try {
-            HeartbeatGatewayGrpc.HeartbeatGatewayBlockingStub stub = HeartbeatGatewayGrpc.newBlockingStub(channel)
-                    .withDeadlineAfter(1000, TimeUnit.MILLISECONDS);
+            HeartbeatGatewayGrpc.HeartbeatGatewayBlockingStub stub = HeartbeatGatewayGrpc.newBlockingStub(channel);
 
             while (running) {
                 try {
-                    stub.registrarHeartbeat(
+                    stub.withDeadlineAfter(1000, TimeUnit.MILLISECONDS).registrarHeartbeat(
                             Comunicacao.HeartbeatRequest.newBuilder()
                                     .setHost(InetAddress.getLocalHost().getHostAddress())
                                     .setPort(servicePort)
