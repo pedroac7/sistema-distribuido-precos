@@ -13,3 +13,9 @@ target/
 
 # Ignorar logs e outros
 *.log
+
+# Ferramentas locais de teste
+grpcurl.exe
+
+# Arquivos temporários de teste
+body.json
