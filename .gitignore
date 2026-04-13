@@ -13,6 +13,7 @@ target/
 
 # Ignorar logs e outros
 *.log
+logs/
 
 # Ferramentas locais de teste
 grpcurl.exe
