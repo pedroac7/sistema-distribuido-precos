@@ -1,5 +1,7 @@
 package heartbeat;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.grpc.Server;
 import io.grpc.ServerBuilder;
 import io.grpc.stub.StreamObserver;
@@ -16,6 +18,8 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class HeartbeatReceiver {
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+
     private static HeartbeatReceiver instance;
     private final int listenPort;
     private final String protocolo;
@@ -128,11 +132,21 @@ public class HeartbeatReceiver {
     }
 
     private void processHeartbeatJson(String json) {
-        String hostVal = extractJson(json, "ip");
-        String portVal = extractJson(json, "port");
-        String tipoVal = extractJson(json, "tipo");
-        if (hostVal != null && portVal != null && tipoVal != null) {
+        try {
+            JsonNode root = OBJECT_MAPPER.readTree(json);
+            JsonNode hostNode = root.get("ip");
+            JsonNode portNode = root.get("port");
+            JsonNode tipoNode = root.get("tipo");
+            if (hostNode == null || portNode == null || tipoNode == null) {
+                return;
+            }
+
+            String hostVal = hostNode.asText();
+            String portVal = Integer.toString(portNode.asInt());
+            String tipoVal = tipoNode.asText();
             registerHeartbeat(hostVal, portVal, tipoVal, "Heartbeat HTTP");
+        } catch (Exception e) {
+            System.out.println("[Gateway] Heartbeat HTTP invalido: " + e.getMessage());
         }
     }
 
@@ -156,15 +170,6 @@ public class HeartbeatReceiver {
         } else {
             System.out.println("[Gateway] " + canal + " recebido de tipo desconhecido: " + tipo);
         }
-    }
-
-    private String extractJson(String json, String key) {
-        String pattern = "\\\"" + key + "\\\"\\s*:\\s*\\\"?([^\\\"]+)\\\"?";
-        java.util.regex.Matcher m = java.util.regex.Pattern.compile(pattern).matcher(json);
-        if (m.find()) {
-            return m.group(1);
-        }
-        return null;
     }
 
     public Map<String, Long> getValidadores() {
