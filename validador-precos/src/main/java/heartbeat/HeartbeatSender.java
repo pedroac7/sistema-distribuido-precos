@@ -66,7 +66,7 @@ public class HeartbeatSender implements Runnable {
             byte[] buf = msg.getBytes(StandardCharsets.UTF_8);
             DatagramPacket packet = new DatagramPacket(buf, buf.length, InetAddress.getByName(gatewayHost), gatewayPort);
             socket.send(packet);
-            Thread.sleep(2000);
+            Thread.sleep(1000);
         }
         socket.close();
     }
@@ -79,7 +79,7 @@ public class HeartbeatSender implements Runnable {
             } catch (Exception e) {
                 // Ignora falhas de conexao
             }
-            Thread.sleep(2000);
+            Thread.sleep(1000);
         }
     }
 
@@ -100,7 +100,7 @@ public class HeartbeatSender implements Runnable {
             } catch (Exception e) {
                 // Ignora falhas de conexao
             }
-            Thread.sleep(2000);
+            Thread.sleep(1000);
         }
     }
 
@@ -124,7 +124,7 @@ public class HeartbeatSender implements Runnable {
                 } catch (StatusRuntimeException e) {
                     // Ignora falhas de conexao
                 }
-                Thread.sleep(2000);
+                Thread.sleep(1000);
             }
         } finally {
             channel.shutdownNow();

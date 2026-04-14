@@ -11,6 +11,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.StringJoiner;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class GatewayService {
     private static final int SOCKET_TIMEOUT_MS = 2000;
@@ -19,6 +20,7 @@ public class GatewayService {
     private final HeartbeatReceiver heartbeatReceiver;
     private final ValidadorClient validadorClient;
     private final RepositorioClient repositorioClient;
+    private final AtomicInteger nextValidadorIndex = new AtomicInteger();
 
     public GatewayService(long epsilonMillis,
                           HeartbeatReceiver heartbeatReceiver,
@@ -73,7 +75,9 @@ public class GatewayService {
     }
 
     private ValidationAttempt validate(PrecoPayload preco, List<RemoteEndpoint> validadores) {
-        for (RemoteEndpoint validador : validadores) {
+        int startIndex = Math.floorMod(nextValidadorIndex.getAndIncrement(), validadores.size());
+        for (int attempt = 0; attempt < validadores.size(); attempt++) {
+            RemoteEndpoint validador = validadores.get((startIndex + attempt) % validadores.size());
             System.out.println("[Gateway] Escolha do validador: " + validador.address());
             try {
                 ValidationClientResult result = validadorClient.validar(validador.host(), validador.port(), preco);

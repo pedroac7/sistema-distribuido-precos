@@ -186,7 +186,7 @@ public class HeartbeatReceiver {
             removerMortos(validadores, "VALIDADOR", agora);
             removerMortos(repositorios, "REPOSITORIO", agora);
             try {
-                Thread.sleep(5000);
+                Thread.sleep(1000);
             } catch (InterruptedException e) {
                 break;
             }
@@ -197,7 +197,7 @@ public class HeartbeatReceiver {
         Iterator<Map.Entry<String, Long>> it = mapa.entrySet().iterator();
         while (it.hasNext()) {
             Map.Entry<String, Long> entry = it.next();
-            if (agora - entry.getValue() > 6000) {
+            if (agora - entry.getValue() > 3000) {
                 System.out.println("[Gateway] " + tipo + " REMOVIDO por timeout: " + entry.getKey());
                 it.remove();
             }
