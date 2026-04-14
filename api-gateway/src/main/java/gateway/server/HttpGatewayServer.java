@@ -11,13 +11,16 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.net.SocketTimeoutException;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
 public class HttpGatewayServer implements ProtocolServer {
-    private static final int SOCKET_TIMEOUT_MS = 2000;
+    private static final int KEEP_ALIVE_TIMEOUT_MS = 5000;
+    private static final int KEEP_ALIVE_TIMEOUT_SECONDS = KEEP_ALIVE_TIMEOUT_MS / 1000;
+    private static final int MAX_REQUESTS_PER_CONNECTION = 100;
 
     private final int businessPort;
     private final GatewayService gatewayService;
@@ -44,17 +47,36 @@ public class HttpGatewayServer implements ProtocolServer {
 
     private void handleClient(Socket client) {
         try (Socket socket = client) {
-            socket.setSoTimeout(SOCKET_TIMEOUT_MS);
-            try {
-                HttpRequest request = readRequest(socket.getInputStream());
+            socket.setSoTimeout(KEEP_ALIVE_TIMEOUT_MS);
+            InputStream inputStream = socket.getInputStream();
+            OutputStream outputStream = socket.getOutputStream();
+
+            for (int requestCount = 0; requestCount < MAX_REQUESTS_PER_CONNECTION; requestCount++) {
+                HttpRequest request;
+                try {
+                    request = readRequest(inputStream);
+                } catch (HttpParseException e) {
+                    GatewayResult result = GatewayResult.error(400, e.getMessage());
+                    writeJsonResponse(outputStream, result, false);
+                    break;
+                } catch (SocketTimeoutException e) {
+                    break;
+                } catch (IOException e) {
+                    GatewayResult result = GatewayResult.error(400, "REQUISICAO_HTTP_INVALIDA");
+                    writeJsonResponse(outputStream, result, false);
+                    break;
+                }
+
+                if (request == null) {
+                    break;
+                }
+
+                boolean keepAlive = shouldKeepAlive(request) && requestCount < MAX_REQUESTS_PER_CONNECTION - 1;
                 GatewayResult result = processRequest(request);
-                writeJsonResponse(socket.getOutputStream(), result);
-            } catch (HttpParseException e) {
-                GatewayResult result = GatewayResult.error(400, e.getMessage());
-                writeJsonResponse(socket.getOutputStream(), result);
-            } catch (IOException e) {
-                GatewayResult result = GatewayResult.error(400, "REQUISICAO_HTTP_INVALIDA");
-                writeJsonResponse(socket.getOutputStream(), result);
+                writeJsonResponse(outputStream, result, keepAlive);
+                if (!keepAlive) {
+                    break;
+                }
             }
         } catch (IOException ignored) {
             // Ignora erro final de conexao
@@ -79,6 +101,9 @@ public class HttpGatewayServer implements ProtocolServer {
 
     private HttpRequest readRequest(InputStream inputStream) throws IOException {
         byte[] headerBytes = readHeaders(inputStream);
+        if (headerBytes == null) {
+            return null;
+        }
         String headerText = new String(headerBytes, StandardCharsets.UTF_8);
         String[] lines = headerText.split("\r\n");
         if (lines.length == 0) {
@@ -98,7 +123,7 @@ public class HttpGatewayServer implements ProtocolServer {
 
         int contentLength = parseContentLength(contentLengthHeader);
         String body = readBody(inputStream, contentLength);
-        return new HttpRequest(requestLineParts[0], requestLineParts[1], headers, body);
+        return new HttpRequest(requestLineParts[0], requestLineParts[1], requestLineParts[2], headers, body);
     }
 
     private byte[] readHeaders(InputStream inputStream) throws IOException {
@@ -108,6 +133,9 @@ public class HttpGatewayServer implements ProtocolServer {
         while (true) {
             int value = inputStream.read();
             if (value == -1) {
+                if (buffer.size() == 0) {
+                    return null;
+                }
                 throw new HttpParseException("CABECALHO_HTTP_INCOMPLETO");
             }
 
@@ -161,7 +189,7 @@ public class HttpGatewayServer implements ProtocolServer {
         return new String(bodyBytes, StandardCharsets.UTF_8);
     }
 
-    private void writeJsonResponse(OutputStream outputStream, GatewayResult result) throws IOException {
+    private void writeJsonResponse(OutputStream outputStream, GatewayResult result, boolean keepAlive) throws IOException {
         Map<String, Object> body = new LinkedHashMap<>();
         if (result.isSuccess()) {
             body.put("status", "OK");
@@ -177,11 +205,27 @@ public class HttpGatewayServer implements ProtocolServer {
         String responseHeaders = "HTTP/1.1 " + result.statusCode() + " " + statusText(result.statusCode()) + "\r\n"
                 + "Content-Type: application/json; charset=UTF-8\r\n"
                 + "Content-Length: " + bodyBytes.length + "\r\n"
-                + "Connection: close\r\n\r\n";
+                + connectionHeaders(keepAlive);
 
         outputStream.write(responseHeaders.getBytes(StandardCharsets.UTF_8));
         outputStream.write(bodyBytes);
         outputStream.flush();
+    }
+
+    private boolean shouldKeepAlive(HttpRequest request) {
+        String connectionHeader = request.headers().get("connection");
+        if ("close".equalsIgnoreCase(connectionHeader)) {
+            return false;
+        }
+        return !"HTTP/1.0".equalsIgnoreCase(request.httpVersion());
+    }
+
+    private String connectionHeaders(boolean keepAlive) {
+        if (!keepAlive) {
+            return "Connection: close\r\n\r\n";
+        }
+        return "Connection: keep-alive\r\n"
+                + "Keep-Alive: timeout=" + KEEP_ALIVE_TIMEOUT_SECONDS + ", max=" + MAX_REQUESTS_PER_CONNECTION + "\r\n\r\n";
     }
 
     private String statusText(int statusCode) {
@@ -195,7 +239,7 @@ public class HttpGatewayServer implements ProtocolServer {
         };
     }
 
-    private record HttpRequest(String method, String path, Map<String, String> headers, String body) {
+    private record HttpRequest(String method, String path, String httpVersion, Map<String, String> headers, String body) {
     }
 
     private static class HttpParseException extends IOException {

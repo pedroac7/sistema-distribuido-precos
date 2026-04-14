@@ -13,7 +13,7 @@ import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 
 public class TcpGatewayServer implements ProtocolServer {
-    private static final int SOCKET_TIMEOUT_MS = 2000;
+    private static final int SOCKET_TIMEOUT_MS = 5000;
 
     private final int businessPort;
     private final GatewayService gatewayService;
