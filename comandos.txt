@@ -1,0 +1,143 @@
+Pré-requisito em cada módulo:
+mvn -q -DskipTests package
+mvn -q dependency:copy-dependencies
+
+==================================================
+HTTP
+==================================================
+
+Gateway:
+cd api-gateway
+java -cp "target/classes;target/dependency/*" gateway.Main 8080 9090 http 100 http
+
+Validador 1:
+cd validador-precos
+java -cp "target/classes;target/dependency/*" validador.Main 8081 127.0.0.1 9090 http http
+
+Validador 2:
+cd validador-precos
+java -cp "target/classes;target/dependency/*" validador.Main 8084 127.0.0.1 9090 http http
+
+Repositório 1:
+cd repositorio-precos
+java -cp "target/classes;target/dependency/*" repositorio.Main 8082 127.0.0.1 9090 http http
+
+Repositório 2:
+cd repositorio-precos
+java -cp "target/classes;target/dependency/*" repositorio.Main 8083 127.0.0.1 9090 http http
+
+==================================================
+TCP
+==================================================
+
+Gateway:
+cd api-gateway
+java -cp "target/classes;target/dependency/*" gateway.Main 8080 9090 tcp 100 tcp
+
+Validador 1:
+cd validador-precos
+java -cp "target/classes;target/dependency/*" validador.Main 8081 127.0.0.1 9090 tcp tcp
+
+Validador 2:
+cd validador-precos
+java -cp "target/classes;target/dependency/*" validador.Main 8084 127.0.0.1 9090 tcp tcp
+
+Repositório 1:
+cd repositorio-precos
+java -cp "target/classes;target/dependency/*" repositorio.Main 8082 127.0.0.1 9090 tcp tcp
+
+Repositório 2:
+cd repositorio-precos
+java -cp "target/classes;target/dependency/*" repositorio.Main 8083 127.0.0.1 9090 tcp tcp
+
+==================================================
+UDP
+==================================================
+
+Gateway:
+cd api-gateway
+java -cp "target/classes;target/dependency/*" gateway.Main 8080 9090 udp 100 udp
+
+Validador 1:
+cd validador-precos
+java -cp "target/classes;target/dependency/*" validador.Main 8081 127.0.0.1 9090 udp udp
+
+Validador 2:
+cd validador-precos
+java -cp "target/classes;target/dependency/*" validador.Main 8084 127.0.0.1 9090 udp udp
+
+Repositório 1:
+cd repositorio-precos
+java -cp "target/classes;target/dependency/*" repositorio.Main 8082 127.0.0.1 9090 udp udp
+
+Repositório 2:
+cd repositorio-precos
+java -cp "target/classes;target/dependency/*" repositorio.Main 8083 127.0.0.1 9090 udp udp
+
+==================================================
+gRPC
+==================================================
+
+Gateway:
+cd api-gateway
+java -cp "target/classes;target/dependency/*" gateway.Main 8080 9090 grpc 100 grpc
+
+Validador 1:
+cd validador-precos
+java -cp "target/classes;target/dependency/*" validador.Main 8081 127.0.0.1 9090 grpc grpc
+
+Validador 2:
+cd validador-precos
+java -cp "target/classes;target/dependency/*" validador.Main 8084 127.0.0.1 9090 grpc grpc
+
+Repositório 1:
+cd repositorio-precos
+java -cp "target/classes;target/dependency/*" repositorio.Main 8082 127.0.0.1 9090 grpc grpc
+
+Repositório 2:
+cd repositorio-precos
+java -cp "target/classes;target/dependency/*" repositorio.Main 8083 127.0.0.1 9090 grpc grpc
+
+==================================================
+SIGNIFICADO DOS PARÂMETROS
+==================================================
+
+Gateway:
+gateway.Main <businessPort> <heartbeatPort> <businessProtocol> <epsilonMs> <heartbeatProtocol>
+
+Exemplo:
+gateway.Main 8080 9090 http 100 http
+
+- 8080 = porta de negócio
+- 9090 = porta de heartbeat
+- http = protocolo de negócio
+- 100 = epsilon do Clock-Bound Wait
+- http = protocolo do heartbeat
+
+Validador / Repositório:
+validador.Main <businessPort> <gatewayHost> <gatewayHeartbeatPort> <businessProtocol> <heartbeatProtocol>
+repositorio.Main <businessPort> <gatewayHost> <gatewayHeartbeatPort> <businessProtocol> <heartbeatProtocol>
+
+Exemplo:
+validador.Main 8081 127.0.0.1 9090 tcp tcp
+
+- 8081 = porta de negócio da instância
+- 127.0.0.1 = host do gateway
+- 9090 = porta do heartbeat do gateway
+- tcp = protocolo de negócio
+- tcp = protocolo do heartbeat
+
+==================================================
+ORDEM RECOMENDADA
+==================================================
+
+1. Gateway
+2. Validadores
+3. Repositórios
+
+Depois espere alguns segundos para os heartbeats estabilizarem antes de testar.
+"""
+path = "/mnt/data/comandos_componentes.txt"
+with open(path, "w", encoding="utf-8") as f:
+    f.write(content)
+print(path)

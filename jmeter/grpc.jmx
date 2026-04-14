@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <jmeterTestPlan version="1.2" properties="5.0" jmeter="5.6.3">
   <hashTree>
-    <TestPlan guiclass="TestPlanGui" testclass="TestPlan" testname="TCP_TEST">
+    <TestPlan guiclass="TestPlanGui" testclass="TestPlan" testname="GRPC_TEST">
       <elementProp name="TestPlan.user_defined_variables" elementType="Arguments" guiclass="ArgumentsPanel" testclass="Arguments" testname="User Defined Variables">
         <collectionProp name="Arguments.arguments"/>
       </elementProp>
@@ -9,8 +9,8 @@
       <boolProp name="TestPlan.serialize_threadgroups">false</boolProp>
     </TestPlan>
     <hashTree>
-      <ThreadGroup guiclass="ThreadGroupGui" testclass="ThreadGroup" testname="TCP_USERS">
-        <intProp name="ThreadGroup.num_threads">100</intProp>
+      <ThreadGroup guiclass="ThreadGroupGui" testclass="ThreadGroup" testname="GRPC_USERS">
+        <intProp name="ThreadGroup.num_threads">200</intProp>
         <intProp name="ThreadGroup.ramp_time">10</intProp>
         <boolProp name="ThreadGroup.same_user_on_next_iteration">true</boolProp>
         <stringProp name="ThreadGroup.on_sample_error">continue</stringProp>
@@ -20,17 +20,30 @@
         </elementProp>
       </ThreadGroup>
       <hashTree>
-        <TCPSampler guiclass="TCPSamplerGui" testclass="TCPSampler" testname="TCP_PRECO">
-          <stringProp name="TCPSampler.server">127.0.0.1</stringProp>
-          <boolProp name="TCPSampler.reUseConnection">true</boolProp>
-          <stringProp name="TCPSampler.port">8080</stringProp>
-          <boolProp name="TCPSampler.nodelay">false</boolProp>
-          <stringProp name="TCPSampler.timeout"></stringProp>
-          <stringProp name="TCPSampler.request">PRECO|BTC|65000.0|1712250000</stringProp>
-          <stringProp name="TCPSampler.EolByte">10</stringProp>
-          <stringProp name="ConfigTestElement.username"></stringProp>
-          <stringProp name="ConfigTestElement.password"></stringProp>
-        </TCPSampler>
+        <vn.zalopay.benchmark.GRPCSampler guiclass="vn.zalopay.benchmark.GRPCSamplerGui" testclass="vn.zalopay.benchmark.GRPCSampler" testname="GRPC Request">
+          <stringProp name="GRPCSampler.protoFolder">D:\Documentos-Disco-D\UFRN\distribuida\sistema-distribuido-precos\api-gateway\src\main\proto</stringProp>
+          <stringProp name="GRPCSampler.libFolder"></stringProp>
+          <stringProp name="GRPCSampler.metadata"></stringProp>
+          <stringProp name="GRPCSampler.host">127.0.0.1</stringProp>
+          <stringProp name="GRPCSampler.port">8080</stringProp>
+          <stringProp name="GRPCSampler.fullMethod">precos.GatewayPrecos/ProcessarPreco</stringProp>
+          <stringProp name="GRPCSampler.deadline">5000</stringProp>
+          <boolProp name="GRPCSampler.tls">false</boolProp>
+          <boolProp name="GRPCSampler.tlsDisableVerification">false</boolProp>
+          <stringProp name="GRPCSampler.clientCertFile"></stringProp>
+          <stringProp name="GRPCSampler.clientKeyFile"></stringProp>
+          <stringProp name="GRPCSampler.caCertFile"></stringProp>
+          <stringProp name="GRPCSampler.channelAwaitTermination">1000</stringProp>
+          <stringProp name="GRPCSampler.maxInboundMessageSize">4194304</stringProp>
+          <stringProp name="GRPCSampler.maxInboundMetadataSize">8192</stringProp>
+          <stringProp name="GRPCSampler.requestJson">{
+  &quot;preco&quot;: {
+    &quot;ativo&quot;: &quot;BTC&quot;,
+    &quot;valor&quot;: 65000.0,
+    &quot;timestamp&quot;: 1712250000
+  }
+}</stringProp>
+        </vn.zalopay.benchmark.GRPCSampler>
         <hashTree/>
         <ResultCollector guiclass="SummaryReport" testclass="ResultCollector" testname="Summary Report">
           <boolProp name="ResultCollector.error_logging">false</boolProp>

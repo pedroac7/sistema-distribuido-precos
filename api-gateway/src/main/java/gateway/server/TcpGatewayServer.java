@@ -11,16 +11,22 @@ import java.io.OutputStreamWriter;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public class TcpGatewayServer implements ProtocolServer {
     private static final int SOCKET_TIMEOUT_MS = 5000;
+    private static final int WORKER_POOL_SIZE = 64;
 
     private final int businessPort;
     private final GatewayService gatewayService;
+    private final ExecutorService workerPool;
 
     public TcpGatewayServer(int businessPort, GatewayService gatewayService) {
         this.businessPort = businessPort;
         this.gatewayService = gatewayService;
+        this.workerPool = Executors.newFixedThreadPool(WORKER_POOL_SIZE);
+        Runtime.getRuntime().addShutdownHook(new Thread(workerPool::shutdown, "gateway-tcp-workers-shutdown"));
     }
 
     @Override
@@ -29,8 +35,7 @@ public class TcpGatewayServer implements ProtocolServer {
             System.out.println("[Gateway] Servidor TCP de negocio iniciado na porta " + businessPort);
             while (true) {
                 Socket client = serverSocket.accept();
-                Thread clientThread = new Thread(() -> handleClient(client), "gateway-business-" + client.getPort());
-                clientThread.start();
+                workerPool.execute(() -> handleClient(client));
             }
         } catch (IOException e) {
             throw new RuntimeException("Falha ao iniciar servidor TCP do gateway", e);
@@ -38,20 +43,27 @@ public class TcpGatewayServer implements ProtocolServer {
     }
 
     private void handleClient(Socket client) {
+        BufferedWriter writer = null;
         try (Socket socket = client;
              BufferedReader reader = new BufferedReader(new InputStreamReader(socket.getInputStream(), StandardCharsets.UTF_8));
-             BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(socket.getOutputStream(), StandardCharsets.UTF_8))) {
+             BufferedWriter currentWriter = new BufferedWriter(new OutputStreamWriter(socket.getOutputStream(), StandardCharsets.UTF_8))) {
+            writer = currentWriter;
             socket.setSoTimeout(SOCKET_TIMEOUT_MS);
+            socket.setTcpNoDelay(true);
 
             String request = reader.readLine();
-            if (request == null || request.isBlank()) {
+            if (request == null) {
+                return;
+            }
+            if (request.isBlank()) {
                 writeResponse(writer, GatewayResult.error(400, "REQUISICAO_VAZIA").toTcpResponse());
                 return;
             }
 
             GatewayResult result = processRequest(request);
-            writeResponse(writer, result.toTcpResponse());
+            writeResponse(currentWriter, result.toTcpResponse());
         } catch (Exception e) {
+            tryWriteErrorResponse(writer, GatewayResult.error(503, "FALHA_INTERNA").toTcpResponse());
             System.out.println("[Gateway] Falha ao atender cliente: " + e.getMessage());
         }
     }
@@ -86,6 +98,18 @@ public class TcpGatewayServer implements ProtocolServer {
         writer.write(response);
         writer.newLine();
         writer.flush();
+    }
+
+    private void tryWriteErrorResponse(BufferedWriter writer, String response) {
+        if (writer == null) {
+            return;
+        }
+
+        try {
+            writeResponse(writer, response);
+        } catch (IOException ignored) {
+            // Ignora falha ao responder erro antes de fechar a conexao
+        }
     }
 
 }

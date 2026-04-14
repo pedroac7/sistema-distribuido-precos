@@ -9,16 +9,22 @@ import java.net.DatagramSocket;
 import java.net.InetAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public class UdpGatewayServer implements ProtocolServer {
     private static final int BUFFER_SIZE = 2048;
+    private static final int WORKER_POOL_SIZE = Math.max(4, Runtime.getRuntime().availableProcessors() * 2);
 
     private final int businessPort;
     private final GatewayService gatewayService;
+    private final ExecutorService workerPool;
 
     public UdpGatewayServer(int businessPort, GatewayService gatewayService) {
         this.businessPort = businessPort;
         this.gatewayService = gatewayService;
+        this.workerPool = Executors.newFixedThreadPool(WORKER_POOL_SIZE);
+        Runtime.getRuntime().addShutdownHook(new Thread(workerPool::shutdown, "gateway-udp-workers-shutdown"));
     }
 
     @Override
@@ -38,11 +44,7 @@ public class UdpGatewayServer implements ProtocolServer {
                 InetAddress clientAddress = requestPacket.getAddress();
                 int clientPort = requestPacket.getPort();
 
-                Thread clientThread = new Thread(
-                        () -> handlePacket(socket, clientAddress, clientPort, requestData),
-                        "gateway-udp-" + clientPort
-                );
-                clientThread.start();
+                workerPool.execute(() -> handlePacket(socket, clientAddress, clientPort, requestData));
             }
         } catch (IOException e) {
             throw new RuntimeException("Falha ao iniciar servidor UDP do gateway", e);

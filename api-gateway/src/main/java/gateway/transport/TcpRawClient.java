@@ -20,13 +20,19 @@ public class TcpRawClient {
         try (Socket socket = new Socket()) {
             socket.connect(new InetSocketAddress(host, port), timeoutMs);
             socket.setSoTimeout(timeoutMs);
+            socket.setTcpNoDelay(true);
 
             try (BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(socket.getOutputStream(), StandardCharsets.UTF_8));
                  BufferedReader reader = new BufferedReader(new InputStreamReader(socket.getInputStream(), StandardCharsets.UTF_8))) {
                 writer.write(message);
                 writer.newLine();
                 writer.flush();
-                return reader.readLine();
+
+                String response = reader.readLine();
+                if (response == null) {
+                    throw new IOException("RESPOSTA_TCP_INCOMPLETA");
+                }
+                return response;
             }
         }
     }

@@ -11,16 +11,22 @@ import java.io.OutputStreamWriter;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public class TcpRepositorioServer implements ProtocolServer {
-    private static final int SOCKET_TIMEOUT_MS = 2000;
+    private static final int SOCKET_TIMEOUT_MS = 5000;
+    private static final int WORKER_POOL_SIZE = 64;
 
     private final int businessPort;
     private final RepositorioService repositorioService;
+    private final ExecutorService workerPool;
 
     public TcpRepositorioServer(int businessPort, RepositorioService repositorioService) {
         this.businessPort = businessPort;
         this.repositorioService = repositorioService;
+        this.workerPool = Executors.newFixedThreadPool(WORKER_POOL_SIZE);
+        Runtime.getRuntime().addShutdownHook(new Thread(workerPool::shutdown, "repositorio-tcp-workers-shutdown"));
     }
 
     @Override
@@ -29,8 +35,7 @@ public class TcpRepositorioServer implements ProtocolServer {
             System.out.println("[Repositorio] Servidor TCP de negocio iniciado na porta " + businessPort);
             while (true) {
                 Socket client = serverSocket.accept();
-                Thread clientThread = new Thread(() -> handleClient(client), "repositorio-business-" + client.getPort());
-                clientThread.start();
+                workerPool.execute(() -> handleClient(client));
             }
         } catch (IOException e) {
             throw new RuntimeException("Falha ao iniciar servidor TCP do repositorio", e);
@@ -38,17 +43,25 @@ public class TcpRepositorioServer implements ProtocolServer {
     }
 
     private void handleClient(Socket client) {
+        BufferedWriter writer = null;
         try (Socket socket = client;
              BufferedReader reader = new BufferedReader(new InputStreamReader(socket.getInputStream(), StandardCharsets.UTF_8));
-             BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(socket.getOutputStream(), StandardCharsets.UTF_8))) {
+             BufferedWriter currentWriter = new BufferedWriter(new OutputStreamWriter(socket.getOutputStream(), StandardCharsets.UTF_8))) {
+            writer = currentWriter;
             socket.setSoTimeout(SOCKET_TIMEOUT_MS);
+            socket.setTcpNoDelay(true);
 
             String request = reader.readLine();
+            if (request == null) {
+                return;
+            }
+
             String response = processRequest(request);
-            writer.write(response);
-            writer.newLine();
-            writer.flush();
+            currentWriter.write(response);
+            currentWriter.newLine();
+            currentWriter.flush();
         } catch (Exception e) {
+            tryWriteErrorResponse(writer, "ERRO|FALHA_INTERNA");
             System.out.println("[Repositorio] Falha ao atender conexao: " + e.getMessage());
         }
     }
@@ -72,6 +85,20 @@ public class TcpRepositorioServer implements ProtocolServer {
             return "ERRO|" + storageResult.mensagem();
         } catch (NumberFormatException e) {
             return "ERRO|FORMATO_INVALIDO";
+        }
+    }
+
+    private void tryWriteErrorResponse(BufferedWriter writer, String response) {
+        if (writer == null) {
+            return;
+        }
+
+        try {
+            writer.write(response);
+            writer.newLine();
+            writer.flush();
+        } catch (IOException ignored) {
+            // Ignora falha ao responder erro antes de fechar a conexao
         }
     }
 }

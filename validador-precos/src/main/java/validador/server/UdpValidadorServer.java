@@ -9,16 +9,22 @@ import java.net.DatagramSocket;
 import java.net.InetAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public class UdpValidadorServer implements ProtocolServer {
     private static final int BUFFER_SIZE = 2048;
+    private static final int WORKER_POOL_SIZE = Math.max(4, Runtime.getRuntime().availableProcessors() * 2);
 
     private final int businessPort;
     private final ValidadorService validadorService;
+    private final ExecutorService workerPool;
 
     public UdpValidadorServer(int businessPort, ValidadorService validadorService) {
         this.businessPort = businessPort;
         this.validadorService = validadorService;
+        this.workerPool = Executors.newFixedThreadPool(WORKER_POOL_SIZE);
+        Runtime.getRuntime().addShutdownHook(new Thread(workerPool::shutdown, "validador-udp-workers-shutdown"));
     }
 
     @Override
@@ -38,11 +44,7 @@ public class UdpValidadorServer implements ProtocolServer {
                 InetAddress clientAddress = requestPacket.getAddress();
                 int clientPort = requestPacket.getPort();
 
-                Thread clientThread = new Thread(
-                        () -> handlePacket(socket, clientAddress, clientPort, requestData),
-                        "validador-udp-" + clientPort
-                );
-                clientThread.start();
+                workerPool.execute(() -> handlePacket(socket, clientAddress, clientPort, requestData));
             }
         } catch (IOException e) {
             throw new RuntimeException("Falha ao iniciar servidor UDP do validador", e);
