@@ -26,8 +26,6 @@ public class GrpcValidadorClient implements ValidadorClient {
                 .build();
 
         try {
-            System.out.println("[Gateway] Chamada gRPC para validador " + host + ":" + port);
-
             ValidadorPrecosGrpc.ValidadorPrecosBlockingStub stub = ValidadorPrecosGrpc.newBlockingStub(channel)
                     .withDeadlineAfter(timeoutMs, TimeUnit.MILLISECONDS);
 

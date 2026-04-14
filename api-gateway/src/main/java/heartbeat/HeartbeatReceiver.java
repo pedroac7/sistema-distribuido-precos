@@ -161,12 +161,17 @@ public class HeartbeatReceiver {
 
         String chave = host + ":" + port;
         String tipo = tipoRaw.toLowerCase();
+        long agora = System.currentTimeMillis();
         if (tipo.contains("validador")) {
-            validadores.put(chave, System.currentTimeMillis());
-            System.out.println("[Gateway] " + canal + " recebido de VALIDADOR " + chave);
+            Long anterior = validadores.put(chave, agora);
+            if (anterior == null) {
+                System.out.println("[Gateway] VALIDADOR REGISTRADO: " + chave);
+            }
         } else if (tipo.contains("repositorio")) {
-            repositorios.put(chave, System.currentTimeMillis());
-            System.out.println("[Gateway] " + canal + " recebido de REPOSITORIO " + chave);
+            Long anterior = repositorios.put(chave, agora);
+            if (anterior == null) {
+                System.out.println("[Gateway] REPOSITORIO REGISTRADO: " + chave);
+            }
         } else {
             System.out.println("[Gateway] " + canal + " recebido de tipo desconhecido: " + tipo);
         }

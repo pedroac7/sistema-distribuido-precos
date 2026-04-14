@@ -47,19 +47,14 @@ public class HttpValidadorServer implements ProtocolServer {
             socket.setSoTimeout(SOCKET_TIMEOUT_MS);
             try {
                 HttpRequest request = readRequest(socket.getInputStream());
-                System.out.println("[Validador] Requisicao HTTP recebida: " + request.method() + " " + request.path());
-
                 HttpResult result = processRequest(request);
                 writeJsonResponse(socket.getOutputStream(), result.statusCode(), result.body());
-                System.out.println("[Validador] Resposta HTTP enviada: " + result.statusCode() + " - " + result.mensagem());
             } catch (HttpParseException e) {
                 HttpResult result = errorResult(400, e.getMessage());
                 writeJsonResponse(socket.getOutputStream(), result.statusCode(), result.body());
-                System.out.println("[Validador] Resposta HTTP enviada: " + result.statusCode() + " - " + result.mensagem());
             } catch (IOException e) {
                 HttpResult result = errorResult(400, "REQUISICAO_HTTP_INVALIDA");
                 writeJsonResponse(socket.getOutputStream(), result.statusCode(), result.body());
-                System.out.println("[Validador] Resposta HTTP enviada: " + result.statusCode() + " - " + result.mensagem());
             }
         } catch (IOException ignored) {
             // Ignora erro final de conexao

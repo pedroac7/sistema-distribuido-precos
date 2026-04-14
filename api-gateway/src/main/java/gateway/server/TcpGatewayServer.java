@@ -49,10 +49,8 @@ public class TcpGatewayServer implements ProtocolServer {
                 return;
             }
 
-            System.out.println("[Gateway] Recebimento no gateway: " + request);
             GatewayResult result = processRequest(request);
             writeResponse(writer, result.toTcpResponse());
-            System.out.println("[Gateway] Resposta final: " + result.toTcpResponse());
         } catch (Exception e) {
             System.out.println("[Gateway] Falha ao atender cliente: " + e.getMessage());
         }

@@ -44,14 +44,10 @@ public class TcpValidadorServer implements ProtocolServer {
             socket.setSoTimeout(SOCKET_TIMEOUT_MS);
 
             String request = reader.readLine();
-            System.out.println("[Validador] Requisicao recebida: " + request);
-
             String response = processRequest(request);
             writer.write(response);
             writer.newLine();
             writer.flush();
-
-            System.out.println("[Validador] Resposta enviada: " + response);
         } catch (Exception e) {
             System.out.println("[Validador] Falha ao atender conexao: " + e.getMessage());
         }

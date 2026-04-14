@@ -26,8 +26,6 @@ public class GrpcRepositorioClient implements RepositorioClient {
                 .build();
 
         try {
-            System.out.println("[Gateway] Chamada gRPC para repositorio " + host + ":" + port);
-
             RepositorioPrecosGrpc.RepositorioPrecosBlockingStub stub = RepositorioPrecosGrpc.newBlockingStub(channel)
                     .withDeadlineAfter(timeoutMs, TimeUnit.MILLISECONDS);
 

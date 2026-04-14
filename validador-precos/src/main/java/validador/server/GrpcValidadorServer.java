@@ -48,8 +48,6 @@ public class GrpcValidadorServer implements ProtocolServer {
                     request.getPreco().getValor(),
                     request.getPreco().getTimestamp()
             );
-            System.out.println("[Validador] Requisicao gRPC recebida para ativo " + payload.ativo());
-
             ValidationResult validationResult = validadorService.validar(payload);
             Comunicacao.ValidaPrecoResponse response = Comunicacao.ValidaPrecoResponse.newBuilder()
                     .setValido(validationResult.valid())
@@ -58,7 +56,6 @@ public class GrpcValidadorServer implements ProtocolServer {
 
             responseObserver.onNext(response);
             responseObserver.onCompleted();
-            System.out.println("[Validador] Resposta gRPC enviada: " + validationResult.mensagem());
         }
     }
 }

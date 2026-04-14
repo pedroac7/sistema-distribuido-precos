@@ -51,7 +51,6 @@ public class UdpGatewayServer implements ProtocolServer {
 
     private void handlePacket(DatagramSocket socket, InetAddress clientAddress, int clientPort, byte[] requestData) {
         String request = new String(requestData, StandardCharsets.UTF_8).trim();
-        System.out.println("[Gateway] Recebimento no gateway: " + request);
 
         GatewayResult result;
         try {
@@ -64,7 +63,6 @@ public class UdpGatewayServer implements ProtocolServer {
         String response = result.toTcpResponse();
         try {
             sendResponse(socket, clientAddress, clientPort, response);
-            System.out.println("[Gateway] Resposta final: " + response);
         } catch (IOException e) {
             System.out.println("[Gateway] Falha ao responder cliente UDP: " + e.getMessage());
         }

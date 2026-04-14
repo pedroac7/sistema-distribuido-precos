@@ -38,7 +38,6 @@ public class GatewayService {
 
     public GatewayResult process(PrecoPayload preco) {
         List<RemoteEndpoint> validadores = snapshotEndpoints(heartbeatReceiver.getValidadores());
-        System.out.println("[Gateway] Validadores vivos: " + formatEndpoints(validadores));
         if (validadores.isEmpty()) {
             return GatewayResult.error(503, "SEM_VALIDADOR_DISPONIVEL");
         }
@@ -52,7 +51,6 @@ public class GatewayService {
         }
 
         List<RemoteEndpoint> repositorios = snapshotEndpoints(heartbeatReceiver.getRepositorios());
-        System.out.println("[Gateway] Repositorios vivos: " + formatEndpoints(repositorios));
         if (repositorios.isEmpty()) {
             return GatewayResult.error(503, "SEM_REPOSITORIO_DISPONIVEL");
         }
@@ -63,7 +61,6 @@ public class GatewayService {
         }
 
         long waitMillis = 2 * epsilonMillis;
-        System.out.println("[Gateway] Aplicacao do Clock-Bound Wait: " + waitMillis + "ms");
         try {
             Thread.sleep(waitMillis);
         } catch (InterruptedException e) {
@@ -78,16 +75,13 @@ public class GatewayService {
         int startIndex = Math.floorMod(nextValidadorIndex.getAndIncrement(), validadores.size());
         for (int attempt = 0; attempt < validadores.size(); attempt++) {
             RemoteEndpoint validador = validadores.get((startIndex + attempt) % validadores.size());
-            System.out.println("[Gateway] Escolha do validador: " + validador.address());
             try {
                 ValidationClientResult result = validadorClient.validar(validador.host(), validador.port(), preco);
-                System.out.println("[Gateway] Resultado da validacao em " + validador.address() + ": " + result.mensagem());
                 if (result.valid()) {
                     return ValidationAttempt.accepted();
                 }
                 return ValidationAttempt.invalid(result.mensagem());
             } catch (IOException e) {
-                System.out.println("[Gateway] Falha ao chamar validador " + validador.address() + ": " + e.getMessage());
             }
         }
         return ValidationAttempt.unavailable("FALHA_AO_VALIDAR");
@@ -97,21 +91,15 @@ public class GatewayService {
         int sucessos = 0;
 
         for (RemoteEndpoint repositorio : repositorios) {
-            System.out.println("[Gateway] Tentativa de replicacao em " + repositorio.address());
             try {
                 StorageClientResult result = repositorioClient.armazenar(repositorio.host(), repositorio.port(), preco);
                 if (result.success()) {
                     sucessos++;
-                    System.out.println("[Gateway] Replicacao com sucesso em " + repositorio.address());
-                } else {
-                    System.out.println("[Gateway] Falha na replicacao em " + repositorio.address() + ": " + result.mensagem());
                 }
             } catch (IOException e) {
-                System.out.println("[Gateway] Falha na replicacao em " + repositorio.address() + ": " + e.getMessage());
             }
         }
 
-        System.out.println("[Gateway] Sucessos por repositorio: " + sucessos + "/" + repositorios.size());
         return sucessos;
     }
 

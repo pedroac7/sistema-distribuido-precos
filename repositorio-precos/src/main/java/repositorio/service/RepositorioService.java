@@ -23,7 +23,6 @@ public class RepositorioService {
 
         PrecoArmazenado precoArmazenado = new PrecoArmazenado(preco.ativo(), preco.valor(), preco.timestamp());
         precos.put(preco.ativo(), precoArmazenado);
-        System.out.println("[Repositorio] Preco armazenado para ativo " + preco.ativo() + ": " + precoArmazenado);
         return StorageResult.success("ARMAZENADO");
     }
 }

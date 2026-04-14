@@ -47,19 +47,14 @@ public class HttpGatewayServer implements ProtocolServer {
             socket.setSoTimeout(SOCKET_TIMEOUT_MS);
             try {
                 HttpRequest request = readRequest(socket.getInputStream());
-                System.out.println("[Gateway] Recebimento no gateway: " + request.method() + " " + request.path());
-
                 GatewayResult result = processRequest(request);
                 writeJsonResponse(socket.getOutputStream(), result);
-                System.out.println("[Gateway] Resposta final HTTP: " + result.statusCode() + " - " + result.mensagem());
             } catch (HttpParseException e) {
                 GatewayResult result = GatewayResult.error(400, e.getMessage());
                 writeJsonResponse(socket.getOutputStream(), result);
-                System.out.println("[Gateway] Resposta final HTTP: " + result.statusCode() + " - " + result.mensagem());
             } catch (IOException e) {
                 GatewayResult result = GatewayResult.error(400, "REQUISICAO_HTTP_INVALIDA");
                 writeJsonResponse(socket.getOutputStream(), result);
-                System.out.println("[Gateway] Resposta final HTTP: " + result.statusCode() + " - " + result.mensagem());
             }
         } catch (IOException ignored) {
             // Ignora erro final de conexao

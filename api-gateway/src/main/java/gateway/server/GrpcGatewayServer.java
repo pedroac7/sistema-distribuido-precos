@@ -48,7 +48,6 @@ public class GrpcGatewayServer implements ProtocolServer {
                     request.getPreco().getValor(),
                     request.getPreco().getTimestamp()
             );
-            System.out.println("[Gateway] Recebimento no gateway: gRPC ativo=" + preco.ativo());
 
             GatewayResult result = gatewayService.process(preco);
             Comunicacao.ProcessaPrecoResponse response = Comunicacao.ProcessaPrecoResponse.newBuilder()
@@ -60,7 +59,6 @@ public class GrpcGatewayServer implements ProtocolServer {
 
             responseObserver.onNext(response);
             responseObserver.onCompleted();
-            System.out.println("[Gateway] Resposta final gRPC: codigo=" + result.statusCode() + " mensagem=" + result.mensagem());
         }
     }
 }

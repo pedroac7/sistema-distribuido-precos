@@ -48,8 +48,6 @@ public class GrpcRepositorioServer implements ProtocolServer {
                     request.getPreco().getValor(),
                     request.getPreco().getTimestamp()
             );
-            System.out.println("[Repositorio] Requisicao gRPC recebida para ativo " + payload.ativo());
-
             StorageResult storageResult = repositorioService.armazenar(payload);
             Comunicacao.ArmazenaPrecoResponse response = Comunicacao.ArmazenaPrecoResponse.newBuilder()
                     .setSucesso(storageResult.success())
@@ -58,7 +56,6 @@ public class GrpcRepositorioServer implements ProtocolServer {
 
             responseObserver.onNext(response);
             responseObserver.onCompleted();
-            System.out.println("[Repositorio] Resposta gRPC enviada: " + storageResult.mensagem());
         }
     }
 }

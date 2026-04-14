@@ -44,14 +44,10 @@ public class TcpRepositorioServer implements ProtocolServer {
             socket.setSoTimeout(SOCKET_TIMEOUT_MS);
 
             String request = reader.readLine();
-            System.out.println("[Repositorio] Requisicao recebida: " + request);
-
             String response = processRequest(request);
             writer.write(response);
             writer.newLine();
             writer.flush();
-
-            System.out.println("[Repositorio] Resposta enviada: " + response);
         } catch (Exception e) {
             System.out.println("[Repositorio] Falha ao atender conexao: " + e.getMessage());
         }

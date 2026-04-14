@@ -51,12 +51,9 @@ public class UdpValidadorServer implements ProtocolServer {
 
     private void handlePacket(DatagramSocket socket, InetAddress clientAddress, int clientPort, byte[] requestData) {
         String request = new String(requestData, StandardCharsets.UTF_8).trim();
-        System.out.println("[Validador] Requisicao UDP recebida: " + request);
-
         String response = processRequest(request);
         try {
             sendResponse(socket, clientAddress, clientPort, response);
-            System.out.println("[Validador] Resposta UDP enviada: " + response);
         } catch (IOException e) {
             System.out.println("[Validador] Falha ao responder datagrama UDP: " + e.getMessage());
         }
