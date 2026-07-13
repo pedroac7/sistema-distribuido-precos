@@ -2,6 +2,7 @@ package validador.server;
 
 import validador.model.*;
 import validador.service.ValidadorService;
+import validador.service.ValidadorUnavailableException;
 
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
@@ -10,60 +11,136 @@ import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.net.SocketTimeoutException;
 import java.nio.charset.StandardCharsets;
+import java.util.Set;
+import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Future;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class TcpValidadorServer implements ProtocolServer {
-    private static final int SOCKET_TIMEOUT_MS = 5000;
-    private static final int WORKER_POOL_SIZE = 64;
+    static final int TCP_CONNECTION_IDLE_TIMEOUT_MS = 5000;
+    static final int MAX_REQUESTS_PER_CONNECTION = 1000;
+    private static final int CONNECTION_WORKER_POOL_SIZE = 32;
+    private static final int CONNECTION_QUEUE_CAPACITY = 64;
+    private static final int VALIDATION_WORKER_POOL_SIZE = 8;
+    private static final int VALIDATION_QUEUE_CAPACITY = 32;
+    private static final int VALIDATION_RESULT_TIMEOUT_MS = 2000;
 
     private final int businessPort;
     private final ValidadorService validadorService;
-    private final ExecutorService workerPool;
+    private final ExecutorService connectionWorkerPool;
+    private final ExecutorService validationWorkerPool;
+    private final Set<Socket> activeSockets = ConcurrentHashMap.newKeySet();
+    private volatile ServerSocket serverSocket;
+    private volatile boolean shuttingDown;
 
     public TcpValidadorServer(int businessPort, ValidadorService validadorService) {
         this.businessPort = businessPort;
         this.validadorService = validadorService;
-        this.workerPool = Executors.newFixedThreadPool(WORKER_POOL_SIZE);
-        Runtime.getRuntime().addShutdownHook(new Thread(workerPool::shutdown, "validador-tcp-workers-shutdown"));
+        this.connectionWorkerPool = new ThreadPoolExecutor(
+                CONNECTION_WORKER_POOL_SIZE,
+                CONNECTION_WORKER_POOL_SIZE,
+                0L,
+                TimeUnit.MILLISECONDS,
+                new ArrayBlockingQueue<>(CONNECTION_QUEUE_CAPACITY),
+                namedThreadFactory("validador-tcp-connection"),
+                new ThreadPoolExecutor.AbortPolicy());
+        this.validationWorkerPool = new ThreadPoolExecutor(
+                VALIDATION_WORKER_POOL_SIZE,
+                VALIDATION_WORKER_POOL_SIZE,
+                0L,
+                TimeUnit.MILLISECONDS,
+                new ArrayBlockingQueue<>(VALIDATION_QUEUE_CAPACITY),
+                namedThreadFactory("validador-tcp-validation"),
+                new ThreadPoolExecutor.AbortPolicy());
+        Runtime.getRuntime().addShutdownHook(new Thread(this::shutdownWorkers, "validador-tcp-workers-shutdown"));
     }
 
     @Override
     public void start() {
-        try (ServerSocket serverSocket = new ServerSocket(businessPort)) {
+        try (ServerSocket currentServerSocket = new ServerSocket(businessPort)) {
+            serverSocket = currentServerSocket;
             System.out.println("[Validador] Servidor TCP de negocio iniciado na porta " + businessPort);
-            while (true) {
-                Socket client = serverSocket.accept();
-                workerPool.execute(() -> handleClient(client));
+            while (!shuttingDown) {
+                Socket client = currentServerSocket.accept();
+                acceptConnection(client);
             }
         } catch (IOException e) {
+            if (shuttingDown) {
+                return;
+            }
             throw new RuntimeException("Falha ao iniciar servidor TCP do validador", e);
+        } finally {
+            serverSocket = null;
         }
     }
 
-    private void handleClient(Socket client) {
+    void acceptConnection(Socket client) {
+        if (shuttingDown) {
+            closeQuietly(client);
+            return;
+        }
+        try {
+            connectionWorkerPool.execute(() -> handleClient(client));
+        } catch (RejectedExecutionException e) {
+            rejectConnection(client);
+        }
+    }
+
+    void handleClient(Socket client) {
         BufferedWriter writer = null;
+        activeSockets.add(client);
         try (Socket socket = client;
              BufferedReader reader = new BufferedReader(new InputStreamReader(socket.getInputStream(), StandardCharsets.UTF_8));
              BufferedWriter currentWriter = new BufferedWriter(new OutputStreamWriter(socket.getOutputStream(), StandardCharsets.UTF_8))) {
             writer = currentWriter;
-            socket.setSoTimeout(SOCKET_TIMEOUT_MS);
+            socket.setSoTimeout(TCP_CONNECTION_IDLE_TIMEOUT_MS);
             socket.setTcpNoDelay(true);
 
-            String request = reader.readLine();
-            if (request == null) {
+            for (int requests = 0; requests < MAX_REQUESTS_PER_CONNECTION; requests++) {
+                String request;
+                try {
+                    request = reader.readLine();
+                } catch (SocketTimeoutException e) {
+                    return;
+                }
+
+                if (request == null) {
+                    return;
+                }
+
+                writeResponse(currentWriter, processRequest(request));
+            }
+        } catch (IOException e) {
+            if (shuttingDown) {
                 return;
             }
-
-            String response = processRequest(request);
-            currentWriter.write(response);
-            currentWriter.newLine();
-            currentWriter.flush();
-        } catch (Exception e) {
+            System.out.println("[Validador] Falha TCP ao atender conexao: " + e.getMessage());
+        } catch (RuntimeException e) {
             tryWriteErrorResponse(writer, "ERRO|FALHA_INTERNA");
-            System.out.println("[Validador] Falha ao atender conexao: " + e.getMessage());
+            System.out.println("[Validador] Falha interna ao atender conexao TCP: " + e.getMessage());
+        } finally {
+            activeSockets.remove(client);
         }
+    }
+
+    void shutdownWorkers() {
+        shuttingDown = true;
+        closeServerSocket();
+        for (Socket socket : activeSockets) {
+            closeQuietly(socket);
+        }
+        connectionWorkerPool.shutdownNow();
+        validationWorkerPool.shutdownNow();
     }
 
     private String processRequest(String request) {
@@ -76,16 +153,50 @@ public class TcpValidadorServer implements ProtocolServer {
             return "ERRO|FORMATO_INVALIDO";
         }
 
+        PrecoPayload payload;
         try {
-            PrecoPayload payload = new PrecoPayload(parts[1], Double.parseDouble(parts[2]), Long.parseLong(parts[3]));
+            payload = new PrecoPayload(parts[1], Double.parseDouble(parts[2]), Long.parseLong(parts[3]));
+        } catch (NumberFormatException e) {
+            return "ERRO|FORMATO_INVALIDO";
+        }
+
+        Future<String> validation;
+        try {
+            validation = validationWorkerPool.submit(() -> validatePayload(payload));
+        } catch (RejectedExecutionException e) {
+            return "ERRO|503|SOBRECARGA";
+        }
+
+        try {
+            return validation.get(VALIDATION_RESULT_TIMEOUT_MS, TimeUnit.MILLISECONDS);
+        } catch (TimeoutException e) {
+            validation.cancel(true);
+            return "ERRO|503|TIMEOUT_VALIDACAO";
+        } catch (InterruptedException e) {
+            validation.cancel(true);
+            Thread.currentThread().interrupt();
+            return "ERRO|503|VALIDACAO_INTERROMPIDA";
+        } catch (ExecutionException e) {
+            return "ERRO|FALHA_INTERNA";
+        }
+    }
+
+    private String validatePayload(PrecoPayload payload) {
+        try {
             ValidationResult validationResult = validadorService.validar(payload);
             if (validationResult.valid()) {
                 return "OK|VALIDO";
             }
             return "ERRO|" + validationResult.mensagem();
-        } catch (NumberFormatException e) {
-            return "ERRO|FORMATO_INVALIDO";
+        } catch (ValidadorUnavailableException e) {
+            return "ERRO|503|" + e.getMessage();
         }
+    }
+
+    private void writeResponse(BufferedWriter writer, String response) throws IOException {
+        writer.write(response);
+        writer.newLine();
+        writer.flush();
     }
 
     private void tryWriteErrorResponse(BufferedWriter writer, String response) {
@@ -94,11 +205,49 @@ public class TcpValidadorServer implements ProtocolServer {
         }
 
         try {
-            writer.write(response);
-            writer.newLine();
-            writer.flush();
+            writeResponse(writer, response);
         } catch (IOException ignored) {
             // Ignora falha ao responder erro antes de fechar a conexao
         }
+    }
+
+    void rejectConnection(Socket client) {
+        try (Socket socket = client;
+             BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(socket.getOutputStream(), StandardCharsets.UTF_8))) {
+            socket.setSoTimeout(TCP_CONNECTION_IDLE_TIMEOUT_MS);
+            writeResponse(writer, "ERRO|503|SOBRECARGA");
+        } catch (IOException e) {
+            if (!shuttingDown) {
+                System.out.println("[Validador] Falha ao rejeitar conexao TCP: " + e.getMessage());
+            }
+        }
+    }
+
+    private void closeServerSocket() {
+        ServerSocket currentServerSocket = serverSocket;
+        if (currentServerSocket != null) {
+            try {
+                currentServerSocket.close();
+            } catch (IOException ignored) {
+                // Ignora falha ao fechar socket servidor durante shutdown
+            }
+        }
+    }
+
+    private static void closeQuietly(Socket socket) {
+        try {
+            socket.close();
+        } catch (IOException ignored) {
+            // Ignora falha ao fechar conexao TCP durante shutdown
+        }
+    }
+
+    private static ThreadFactory namedThreadFactory(String prefix) {
+        AtomicInteger sequence = new AtomicInteger();
+        return runnable -> {
+            Thread thread = new Thread(runnable, prefix + "-" + sequence.incrementAndGet());
+            thread.setDaemon(false);
+            return thread;
+        };
     }
 }

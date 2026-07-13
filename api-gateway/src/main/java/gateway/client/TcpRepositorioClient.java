@@ -5,7 +5,7 @@ import gateway.transport.*;
 
 import java.io.IOException;
 
-public class TcpRepositorioClient implements RepositorioClient {
+public class TcpRepositorioClient implements RepositorioClient, AutoCloseable {
     private final TcpRawClient tcpBusinessClient;
 
     public TcpRepositorioClient(int timeoutMs) {
@@ -22,5 +22,10 @@ public class TcpRepositorioClient implements RepositorioClient {
             return StorageClientResult.error(response.substring("ERRO|".length()));
         }
         return StorageClientResult.error("RESPOSTA_INVALIDA_DO_REPOSITORIO");
+    }
+
+    @Override
+    public void close() {
+        tcpBusinessClient.close();
     }
 }

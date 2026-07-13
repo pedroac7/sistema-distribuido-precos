@@ -29,8 +29,22 @@ public class Main {
 
         ValidadorClient validadorClient = ValidadorClientFactory.create(businessProtocol, GatewayService.socketTimeoutMs());
         RepositorioClient repositorioClient = RepositorioClientFactory.create(businessProtocol, GatewayService.socketTimeoutMs());
+        registerCloseHook(validadorClient);
+        registerCloseHook(repositorioClient);
         GatewayService gatewayService = new GatewayService(epsilonMillis, receiver, validadorClient, repositorioClient);
         ProtocolServer businessServer = GatewayServerFactory.create(businessProtocol, businessPort, gatewayService);
         businessServer.start();
+    }
+
+    private static void registerCloseHook(Object client) {
+        if (client instanceof AutoCloseable closeable) {
+            Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+                try {
+                    closeable.close();
+                } catch (Exception e) {
+                    System.out.println("[Gateway] Falha ao fechar cliente: " + e.getMessage());
+                }
+            }, "gateway-client-close-hook"));
+        }
     }
 }

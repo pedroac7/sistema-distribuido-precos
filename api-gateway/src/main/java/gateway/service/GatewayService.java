@@ -11,10 +11,12 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.StringJoiner;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public class GatewayService {
-    private static final int SOCKET_TIMEOUT_MS = 2000;
+    private static final long VALIDATION_TIMEOUT_MS = 2000L;
+    private static final int SOCKET_TIMEOUT_MS = (int) VALIDATION_TIMEOUT_MS;
 
     private final long epsilonMillis;
     private final HeartbeatReceiver heartbeatReceiver;
@@ -72,19 +74,40 @@ public class GatewayService {
     }
 
     private ValidationAttempt validate(PrecoPayload preco, List<RemoteEndpoint> validadores) {
+        long deadlineNanos = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(VALIDATION_TIMEOUT_MS);
         int startIndex = Math.floorMod(nextValidadorIndex.getAndIncrement(), validadores.size());
         for (int attempt = 0; attempt < validadores.size(); attempt++) {
+            long remainingTimeoutMs = remainingValidationMillis(deadlineNanos);
+            if (remainingTimeoutMs <= 0) {
+                return ValidationAttempt.unavailable("TIMEOUT_AO_VALIDAR");
+            }
+
             RemoteEndpoint validador = validadores.get((startIndex + attempt) % validadores.size());
             try {
-                ValidationClientResult result = validadorClient.validar(validador.host(), validador.port(), preco);
+                ValidationClientResult result = validadorClient.validar(
+                        validador.host(),
+                        validador.port(),
+                        preco,
+                        remainingTimeoutMs);
                 if (result.valid()) {
                     return ValidationAttempt.accepted();
                 }
                 return ValidationAttempt.invalid(result.mensagem());
             } catch (IOException e) {
+                if (remainingValidationMillis(deadlineNanos) <= 0) {
+                    return ValidationAttempt.unavailable("TIMEOUT_AO_VALIDAR");
+                }
             }
         }
         return ValidationAttempt.unavailable("FALHA_AO_VALIDAR");
+    }
+
+    private long remainingValidationMillis(long deadlineNanos) {
+        long remainingNanos = deadlineNanos - System.nanoTime();
+        if (remainingNanos <= 0) {
+            return 0;
+        }
+        return Math.max(1L, TimeUnit.NANOSECONDS.toMillis(remainingNanos + 999_999L));
     }
 
     private int replicate(PrecoPayload preco, List<RemoteEndpoint> repositorios) {
