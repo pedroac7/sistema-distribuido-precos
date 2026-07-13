@@ -43,11 +43,12 @@ class TcpValidadorServerTest {
         assertEquals(32, privateStaticInt("CONNECTION_WORKER_POOL_SIZE"));
         assertEquals(64, privateStaticInt("CONNECTION_QUEUE_CAPACITY"));
         assertEquals(8, privateStaticInt("VALIDATION_WORKER_POOL_SIZE"));
-        assertEquals(32, privateStaticInt("VALIDATION_QUEUE_CAPACITY"));
+        assertEquals(40, privateStaticInt("VALIDATION_QUEUE_CAPACITY"));
+        assertEquals(1500, privateStaticInt("VALIDATION_RESULT_TIMEOUT_MS"));
     }
 
     @Test
-    void dezesseisConexoesPersistentesSaoAtendidasSemMonopolioDosOitoValidadores() {
+    void dezesseisConexoesPersistentesSaoAtendidasSemMonopolioDosValidadores() {
         CountDownLatch releaseConnections = new CountDownLatch(1);
         TcpValidadorServer server = new TcpValidadorServer(0, new FastValidadorService());
         try {
@@ -119,16 +120,16 @@ class TcpValidadorServerTest {
     void validacaoSobrecarregadaResponde503EMesmaConexaoContinuaUsavel() throws Exception {
         BlockingValidadorService service = new BlockingValidadorService();
         TcpValidadorServer server = new TcpValidadorServer(0, service);
-        ExecutorService executor = Executors.newFixedThreadPool(41);
+        ExecutorService executor = Executors.newFixedThreadPool(49);
         try {
-            for (int i = 0; i < 40; i++) {
+            for (int i = 0; i < 48; i++) {
                 StubSocket socket = new StubSocket(VALID_REQUEST);
                 executor.submit(() -> server.handleClient(socket));
             }
 
             ThreadPoolExecutor validationExecutor = validationExecutor(server);
             assertTrue(waitUntil(() -> validationExecutor.getActiveCount() == 8
-                    && validationExecutor.getQueue().size() == 32));
+                    && validationExecutor.getQueue().size() == 40));
 
             InteractiveSocket overloadedSocket = InteractiveSocket.create();
             Future<?> overloadedHandler = executor.submit(() -> server.handleClient(overloadedSocket));
@@ -137,6 +138,8 @@ class TcpValidadorServerTest {
             assertEquals(List.of("ERRO|503|SOBRECARGA"), waitForResponses(overloadedSocket, 1));
 
             service.release();
+            assertTrue(waitUntil(() -> validationExecutor.getActiveCount() == 0
+                    && validationExecutor.getQueue().isEmpty()));
             overloadedSocket.sendRequest("VALIDAR|ETH|3500.0|1712250001");
 
             assertEquals(List.of("ERRO|503|SOBRECARGA", "OK|VALIDO"), waitForResponses(overloadedSocket, 2));
@@ -150,7 +153,7 @@ class TcpValidadorServerTest {
     }
 
     @Test
-    void variasConexoesModeradasNaoGeramTimeoutPorExcederOitoConexoesPersistentes() {
+    void variasConexoesModeradasNaoGeramTimeoutPorExcederConexoesPersistentes() {
         CountDownLatch releaseConnections = new CountDownLatch(1);
         TcpValidadorServer server = new TcpValidadorServer(0, new FastValidadorService());
         try {
@@ -280,7 +283,7 @@ class TcpValidadorServerTest {
 
         assertTrue(socket.closed);
         assertTrue(executor(server, "connectionWorkerPool").isShutdown());
-        assertTrue(executor(server, "validationWorkerPool").isShutdown());
+        assertTrue(validationExecutor(server).isShutdown());
     }
 
     @Test
@@ -313,7 +316,9 @@ class TcpValidadorServerTest {
     }
 
     private static ThreadPoolExecutor validationExecutor(TcpValidadorServer server) throws Exception {
-        return (ThreadPoolExecutor) executor(server, "validationWorkerPool");
+        Field field = TcpValidadorServer.class.getDeclaredField("validationExecutor");
+        field.setAccessible(true);
+        return ((ValidationExecutor) field.get(server)).workerPool();
     }
 
     private static List<String> waitForResponses(StubSocket socket, int expectedCount) {

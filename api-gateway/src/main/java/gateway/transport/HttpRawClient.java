@@ -11,11 +11,13 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.net.Socket;
+import java.net.SocketTimeoutException;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedDeque;
+import java.util.concurrent.TimeUnit;
 
 public class HttpRawClient {
     private static final int MAX_IDLE_CONNECTIONS_PER_DESTINATION = 4;
@@ -29,19 +31,32 @@ public class HttpRawClient {
     }
 
     public HttpCallResult postJson(String host, int port, String path, PrecoPayload payload) throws IOException {
+        return postJson(host, port, path, payload, timeoutMs);
+    }
+
+    public HttpCallResult postJson(String host, int port, String path, PrecoPayload payload, long requestTimeoutMs)
+            throws IOException {
+        if (requestTimeoutMs <= 0) {
+            throw new IOException("TIMEOUT_HTTP");
+        }
+
         String destinationKey = destinationKey(host, port);
         byte[] requestBody = objectMapper.writeValueAsBytes(payload);
         IOException lastFailure = null;
+        long deadlineNanos = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(Math.min(timeoutMs, requestTimeoutMs));
 
         for (int attempt = 0; attempt < 2; attempt++) {
-            PersistentConnection connection = borrowConnection(host, port);
+            PersistentConnection connection = borrowConnection(host, port, deadlineNanos);
             boolean reusable = false;
 
             try {
+                connection.socket().setSoTimeout(effectiveTimeoutMillis(deadlineNanos, timeoutMs));
                 writeRequest(connection.outputStream(), host, port, path, requestBody);
                 ParsedHttpResponse response = readResponse(connection.inputStream());
                 reusable = shouldKeepAlive(response.httpVersion(), response.headers());
                 return new HttpCallResult(response.statusCode(), extractMessage(response.body()));
+            } catch (SocketTimeoutException e) {
+                lastFailure = new IOException("TIMEOUT_HTTP", e);
             } catch (IOException e) {
                 lastFailure = e;
             } finally {
@@ -178,7 +193,7 @@ public class HttpRawClient {
         outputStream.flush();
     }
 
-    private PersistentConnection borrowConnection(String host, int port) throws IOException {
+    private PersistentConnection borrowConnection(String host, int port, long deadlineNanos) throws IOException {
         String destinationKey = destinationKey(host, port);
         ConcurrentLinkedDeque<PersistentConnection> connections =
                 connectionCache.computeIfAbsent(destinationKey, ignored -> new ConcurrentLinkedDeque<>());
@@ -186,7 +201,7 @@ public class HttpRawClient {
         while (true) {
             PersistentConnection connection = connections.pollFirst();
             if (connection == null) {
-                return createConnection(host, port);
+                return createConnection(host, port, deadlineNanos);
             }
             if (connection.isUsable()) {
                 return connection;
@@ -210,12 +225,35 @@ public class HttpRawClient {
         connections.offerFirst(connection);
     }
 
-    private PersistentConnection createConnection(String host, int port) throws IOException {
+    private PersistentConnection createConnection(String host, int port, long deadlineNanos) throws IOException {
         Socket socket = new Socket();
-        socket.connect(new InetSocketAddress(host, port), timeoutMs);
-        socket.setSoTimeout(timeoutMs);
-        socket.setKeepAlive(true);
-        return new PersistentConnection(host, port, socket, socket.getInputStream(), socket.getOutputStream());
+        boolean success = false;
+        try {
+            socket.connect(new InetSocketAddress(host, port), effectiveTimeoutMillis(deadlineNanos, timeoutMs));
+            socket.setSoTimeout(effectiveTimeoutMillis(deadlineNanos, timeoutMs));
+            socket.setKeepAlive(true);
+            PersistentConnection connection = new PersistentConnection(
+                    host,
+                    port,
+                    socket,
+                    socket.getInputStream(),
+                    socket.getOutputStream());
+            success = true;
+            return connection;
+        } finally {
+            if (!success) {
+                socket.close();
+            }
+        }
+    }
+
+    private static int effectiveTimeoutMillis(long deadlineNanos, int configuredTimeoutMs) throws IOException {
+        long remainingNanos = deadlineNanos - System.nanoTime();
+        if (remainingNanos <= 0) {
+            throw new IOException("TIMEOUT_HTTP");
+        }
+        long remainingMillis = Math.max(1L, TimeUnit.NANOSECONDS.toMillis(remainingNanos + 999_999L));
+        return (int) Math.min(configuredTimeoutMs, remainingMillis);
     }
 
     private boolean shouldKeepAlive(String httpVersion, Map<String, String> headers) {

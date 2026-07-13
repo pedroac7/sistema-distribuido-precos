@@ -23,12 +23,17 @@ public class GrpcValidadorClient implements ValidadorClient {
 
     @Override
     public ValidationClientResult validar(String host, int port, PrecoPayload preco) throws IOException {
+        return validar(host, port, preco, timeoutMs);
+    }
+
+    @Override
+    public ValidationClientResult validar(String host, int port, PrecoPayload preco, long requestTimeoutMs) throws IOException {
         String destinationKey = destinationKey(host, port);
         ManagedChannel channel = getOrCreateChannel(destinationKey, host, port);
 
         try {
             ValidadorPrecosGrpc.ValidadorPrecosBlockingStub stub = ValidadorPrecosGrpc.newBlockingStub(channel)
-                    .withDeadlineAfter(timeoutMs, TimeUnit.MILLISECONDS);
+                    .withDeadlineAfter(effectiveTimeoutMillis(requestTimeoutMs), TimeUnit.MILLISECONDS);
 
             Comunicacao.ValidaPrecoResponse response = stub.validarPreco(
                     Comunicacao.ValidaPrecoRequest.newBuilder()
@@ -44,6 +49,13 @@ public class GrpcValidadorClient implements ValidadorClient {
             discardChannel(destinationKey, channel);
             throw new IOException("FALHA_GRPC_VALIDADOR: " + e.getStatus().getCode(), e);
         }
+    }
+
+    long effectiveTimeoutMillis(long requestTimeoutMs) throws IOException {
+        if (requestTimeoutMs <= 0) {
+            throw new IOException("TIMEOUT_GRPC");
+        }
+        return Math.min(timeoutMs, requestTimeoutMs);
     }
 
     private ManagedChannel getOrCreateChannel(String destinationKey, String host, int port) {

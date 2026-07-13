@@ -4,9 +4,11 @@ import java.io.IOException;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.InetAddress;
+import java.net.SocketTimeoutException;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedDeque;
+import java.util.concurrent.TimeUnit;
 
 public class UdpRawClient {
     private static final int BUFFER_SIZE = 2048;
@@ -20,15 +22,25 @@ public class UdpRawClient {
     }
 
     public String send(String host, int port, String message) throws IOException {
+        return send(host, port, message, timeoutMs);
+    }
+
+    public String send(String host, int port, String message, long requestTimeoutMs) throws IOException {
+        if (requestTimeoutMs <= 0) {
+            throw new IOException("TIMEOUT_UDP");
+        }
+
         String destinationKey = destinationKey(host, port);
         byte[] requestBytes = message.getBytes(StandardCharsets.UTF_8);
         IOException lastFailure = null;
+        long deadlineNanos = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(Math.min(timeoutMs, requestTimeoutMs));
 
         for (int attempt = 0; attempt < 2; attempt++) {
-            PooledDatagramSocket pooledSocket = borrowSocket(host, port);
+            PooledDatagramSocket pooledSocket = borrowSocket(host, port, deadlineNanos);
             boolean reusable = false;
 
             try {
+                pooledSocket.socket().setSoTimeout(effectiveTimeoutMillis(deadlineNanos, timeoutMs));
                 DatagramPacket requestPacket = new DatagramPacket(requestBytes, requestBytes.length);
                 pooledSocket.socket().send(requestPacket);
 
@@ -43,6 +55,8 @@ public class UdpRawClient {
                         responsePacket.getLength(),
                         StandardCharsets.UTF_8
                 ).trim();
+            } catch (SocketTimeoutException e) {
+                lastFailure = new IOException("TIMEOUT_UDP", e);
             } catch (IOException e) {
                 lastFailure = e;
             } finally {
@@ -57,7 +71,7 @@ public class UdpRawClient {
         throw lastFailure == null ? new IOException("FALHA_UDP_DESCONHECIDA") : lastFailure;
     }
 
-    private PooledDatagramSocket borrowSocket(String host, int port) throws IOException {
+    private PooledDatagramSocket borrowSocket(String host, int port, long deadlineNanos) throws IOException {
         String destinationKey = destinationKey(host, port);
         ConcurrentLinkedDeque<PooledDatagramSocket> sockets =
                 socketCache.computeIfAbsent(destinationKey, ignored -> new ConcurrentLinkedDeque<>());
@@ -65,7 +79,7 @@ public class UdpRawClient {
         while (true) {
             PooledDatagramSocket pooledSocket = sockets.pollFirst();
             if (pooledSocket == null) {
-                return createSocket(host, port);
+                return createSocket(host, port, deadlineNanos);
             }
             if (pooledSocket.isUsable()) {
                 return pooledSocket;
@@ -89,11 +103,29 @@ public class UdpRawClient {
         sockets.offerFirst(pooledSocket);
     }
 
-    private PooledDatagramSocket createSocket(String host, int port) throws IOException {
+    private PooledDatagramSocket createSocket(String host, int port, long deadlineNanos) throws IOException {
         DatagramSocket socket = new DatagramSocket();
-        socket.connect(InetAddress.getByName(host), port);
-        socket.setSoTimeout(timeoutMs);
-        return new PooledDatagramSocket(socket);
+        boolean success = false;
+        try {
+            socket.connect(InetAddress.getByName(host), port);
+            socket.setSoTimeout(effectiveTimeoutMillis(deadlineNanos, timeoutMs));
+            PooledDatagramSocket pooledSocket = new PooledDatagramSocket(socket);
+            success = true;
+            return pooledSocket;
+        } finally {
+            if (!success) {
+                socket.close();
+            }
+        }
+    }
+
+    private static int effectiveTimeoutMillis(long deadlineNanos, int configuredTimeoutMs) throws IOException {
+        long remainingNanos = deadlineNanos - System.nanoTime();
+        if (remainingNanos <= 0) {
+            throw new IOException("TIMEOUT_UDP");
+        }
+        long remainingMillis = Math.max(1L, TimeUnit.NANOSECONDS.toMillis(remainingNanos + 999_999L));
+        return (int) Math.min(configuredTimeoutMs, remainingMillis);
     }
 
     private String destinationKey(String host, int port) {

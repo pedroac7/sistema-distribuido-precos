@@ -14,11 +14,22 @@ public class UdpValidadorClient implements ValidadorClient {
 
     @Override
     public ValidationClientResult validar(String host, int port, PrecoPayload preco) throws IOException {
-        String response = udpBusinessClient.send(host, port, preco.toValidationMessage());
+        return validarResponse(udpBusinessClient.send(host, port, preco.toValidationMessage()));
+    }
+
+    @Override
+    public ValidationClientResult validar(String host, int port, PrecoPayload preco, long timeoutMs) throws IOException {
+        return validarResponse(udpBusinessClient.send(host, port, preco.toValidationMessage(), timeoutMs));
+    }
+
+    private ValidationClientResult validarResponse(String response) throws IOException {
         if ("OK|VALIDO".equals(response)) {
             return ValidationClientResult.accepted();
         }
         if (response != null && response.startsWith("ERRO|")) {
+            if (response.startsWith("ERRO|503|")) {
+                throw new IOException(response);
+            }
             return ValidationClientResult.invalid(response.substring("ERRO|".length()));
         }
         throw new IOException("RESPOSTA_INVALIDA_DO_VALIDADOR");

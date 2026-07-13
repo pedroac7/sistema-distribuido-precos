@@ -21,14 +21,20 @@ public class HttpValidadorServer implements ProtocolServer {
     private static final int KEEP_ALIVE_TIMEOUT_MS = 5000;
     private static final int KEEP_ALIVE_TIMEOUT_SECONDS = KEEP_ALIVE_TIMEOUT_MS / 1000;
     private static final int MAX_REQUESTS_PER_CONNECTION = 100;
+    private static final int VALIDATION_WORKER_POOL_SIZE = ValidationExecutor.VALIDATION_WORKER_POOL_SIZE;
+    private static final int VALIDATION_QUEUE_CAPACITY = ValidationExecutor.VALIDATION_QUEUE_CAPACITY;
+    private static final int VALIDATION_RESULT_TIMEOUT_MS = ValidationExecutor.VALIDATION_RESULT_TIMEOUT_MS;
 
     private final int businessPort;
     private final ValidadorService validadorService;
+    private final ValidationExecutor validationExecutor;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     public HttpValidadorServer(int businessPort, ValidadorService validadorService) {
         this.businessPort = businessPort;
         this.validadorService = validadorService;
+        this.validationExecutor = new ValidationExecutor("validador-http-validation");
+        Runtime.getRuntime().addShutdownHook(new Thread(validationExecutor::shutdownNow, "validador-http-workers-shutdown"));
     }
 
     @Override
@@ -93,13 +99,17 @@ public class HttpValidadorServer implements ProtocolServer {
 
         try {
             PrecoPayload payload = objectMapper.readValue(request.body(), PrecoPayload.class);
-            ValidationResult validationResult = validadorService.validar(payload);
+            ValidationResult validationResult = validationExecutor.validate(validadorService, payload);
             if (validationResult.valid()) {
                 return successResult("VALIDO");
             }
             return errorResult(400, validationResult.mensagem());
+        } catch (ValidationExecutionUnavailableException e) {
+            return errorResult(503, e.getMessage());
         } catch (IOException e) {
             return errorResult(400, "JSON_INVALIDO");
+        } catch (RuntimeException e) {
+            return errorResult(503, "FALHA_INTERNA");
         }
     }
 
@@ -237,6 +247,7 @@ public class HttpValidadorServer implements ProtocolServer {
             case 400 -> "Bad Request";
             case 404 -> "Not Found";
             case 405 -> "Method Not Allowed";
+            case 503 -> "Service Unavailable";
             default -> "Internal Server Error";
         };
     }

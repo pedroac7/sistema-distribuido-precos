@@ -2,7 +2,6 @@ package validador.server;
 
 import validador.model.*;
 import validador.service.ValidadorService;
-import validador.service.ValidadorUnavailableException;
 
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
@@ -16,13 +15,10 @@ import java.nio.charset.StandardCharsets;
 import java.util.Set;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Future;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -32,13 +28,13 @@ public class TcpValidadorServer implements ProtocolServer {
     private static final int CONNECTION_WORKER_POOL_SIZE = 32;
     private static final int CONNECTION_QUEUE_CAPACITY = 64;
     private static final int VALIDATION_WORKER_POOL_SIZE = 8;
-    private static final int VALIDATION_QUEUE_CAPACITY = 32;
-    private static final int VALIDATION_RESULT_TIMEOUT_MS = 2000;
+    private static final int VALIDATION_QUEUE_CAPACITY = ValidationExecutor.VALIDATION_QUEUE_CAPACITY;
+    private static final int VALIDATION_RESULT_TIMEOUT_MS = ValidationExecutor.VALIDATION_RESULT_TIMEOUT_MS;
 
     private final int businessPort;
     private final ValidadorService validadorService;
     private final ExecutorService connectionWorkerPool;
-    private final ExecutorService validationWorkerPool;
+    private final ValidationExecutor validationExecutor;
     private final Set<Socket> activeSockets = ConcurrentHashMap.newKeySet();
     private volatile ServerSocket serverSocket;
     private volatile boolean shuttingDown;
@@ -54,14 +50,7 @@ public class TcpValidadorServer implements ProtocolServer {
                 new ArrayBlockingQueue<>(CONNECTION_QUEUE_CAPACITY),
                 namedThreadFactory("validador-tcp-connection"),
                 new ThreadPoolExecutor.AbortPolicy());
-        this.validationWorkerPool = new ThreadPoolExecutor(
-                VALIDATION_WORKER_POOL_SIZE,
-                VALIDATION_WORKER_POOL_SIZE,
-                0L,
-                TimeUnit.MILLISECONDS,
-                new ArrayBlockingQueue<>(VALIDATION_QUEUE_CAPACITY),
-                namedThreadFactory("validador-tcp-validation"),
-                new ThreadPoolExecutor.AbortPolicy());
+        this.validationExecutor = new ValidationExecutor("validador-tcp-validation", VALIDATION_WORKER_POOL_SIZE);
         Runtime.getRuntime().addShutdownHook(new Thread(this::shutdownWorkers, "validador-tcp-workers-shutdown"));
     }
 
@@ -140,7 +129,7 @@ public class TcpValidadorServer implements ProtocolServer {
             closeQuietly(socket);
         }
         connectionWorkerPool.shutdownNow();
-        validationWorkerPool.shutdownNow();
+        validationExecutor.shutdownNow();
     }
 
     private String processRequest(String request) {
@@ -160,37 +149,20 @@ public class TcpValidadorServer implements ProtocolServer {
             return "ERRO|FORMATO_INVALIDO";
         }
 
-        Future<String> validation;
         try {
-            validation = validationWorkerPool.submit(() -> validatePayload(payload));
-        } catch (RejectedExecutionException e) {
-            return "ERRO|503|SOBRECARGA";
-        }
-
-        try {
-            return validation.get(VALIDATION_RESULT_TIMEOUT_MS, TimeUnit.MILLISECONDS);
-        } catch (TimeoutException e) {
-            validation.cancel(true);
-            return "ERRO|503|TIMEOUT_VALIDACAO";
-        } catch (InterruptedException e) {
-            validation.cancel(true);
-            Thread.currentThread().interrupt();
-            return "ERRO|503|VALIDACAO_INTERROMPIDA";
-        } catch (ExecutionException e) {
+            return formatValidationResult(validationExecutor.validate(validadorService, payload));
+        } catch (ValidationExecutionUnavailableException e) {
+            return "ERRO|503|" + e.getMessage();
+        } catch (RuntimeException e) {
             return "ERRO|FALHA_INTERNA";
         }
     }
 
-    private String validatePayload(PrecoPayload payload) {
-        try {
-            ValidationResult validationResult = validadorService.validar(payload);
-            if (validationResult.valid()) {
-                return "OK|VALIDO";
-            }
-            return "ERRO|" + validationResult.mensagem();
-        } catch (ValidadorUnavailableException e) {
-            return "ERRO|503|" + e.getMessage();
+    private String formatValidationResult(ValidationResult validationResult) {
+        if (validationResult.valid()) {
+            return "OK|VALIDO";
         }
+        return "ERRO|" + validationResult.mensagem();
     }
 
     private void writeResponse(BufferedWriter writer, String response) throws IOException {

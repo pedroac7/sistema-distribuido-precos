@@ -62,7 +62,7 @@ class GatewayServiceTest {
         assertEquals(200, service.process(PRECO_VALIDO).statusCode());
 
         assertEquals(List.of(8081, 8084), validadorClient.calledPorts);
-        assertTrue(validadorClient.timeoutMs.stream().allMatch(timeout -> timeout > 0 && timeout <= 2000));
+        assertTrue(validadorClient.timeoutMs.stream().allMatch(timeout -> timeout > 0 && timeout <= 1500));
     }
 
     @Test
@@ -115,7 +115,7 @@ class GatewayServiceTest {
                 timeoutAwareValidador((host, port, preco, timeoutMs) -> {
                     timeouts.add(timeoutMs);
                     if (timeouts.size() == 1) {
-                        sleep(1850);
+                        sleep(1350);
                         throw new IOException("TIMEOUT_SIMULADO");
                     }
                     return ValidationClientResult.accepted();
@@ -126,7 +126,7 @@ class GatewayServiceTest {
 
         assertEquals(200, result.statusCode());
         assertEquals(2, timeouts.size());
-        assertTrue(timeouts.get(0) > 1900 && timeouts.get(0) <= 2000);
+        assertTrue(timeouts.get(0) > 1400 && timeouts.get(0) <= 1500);
         assertTrue(timeouts.get(1) > 0 && timeouts.get(1) < 500);
     }
 
@@ -153,8 +153,8 @@ class GatewayServiceTest {
         assertEquals(503, result.statusCode());
         assertEquals("TIMEOUT_AO_VALIDAR", result.mensagem());
         assertEquals(1, timeouts.size());
-        assertTrue(elapsedMillis >= 1900 && elapsedMillis < 2600,
-                "deadline deveria encerrar perto de 2s, mas levou " + elapsedMillis + "ms");
+        assertTrue(elapsedMillis >= 1400 && elapsedMillis < 2100,
+                "deadline deveria encerrar perto de 1.5s, mas levou " + elapsedMillis + "ms");
     }
 
     private void addValidadores() {
@@ -178,7 +178,7 @@ class GatewayServiceTest {
         return new ValidadorClient() {
             @Override
             public ValidationClientResult validar(String host, int port, PrecoPayload preco) throws IOException {
-                return validar(host, port, preco, 2000);
+                return validar(host, port, preco, 1500);
             }
 
             @Override
@@ -210,7 +210,7 @@ class GatewayServiceTest {
 
         @Override
         public ValidationClientResult validar(String host, int port, PrecoPayload preco) throws IOException {
-            return validar(host, port, preco, 2000);
+            return validar(host, port, preco, 1500);
         }
 
         @Override

@@ -14,7 +14,15 @@ public class HttpValidadorClient implements ValidadorClient {
 
     @Override
     public ValidationClientResult validar(String host, int port, PrecoPayload preco) throws IOException {
-        HttpRawClient.HttpCallResult response = httpBusinessClient.postJson(host, port, "/validar", preco);
+        return validarResponse(httpBusinessClient.postJson(host, port, "/validar", preco));
+    }
+
+    @Override
+    public ValidationClientResult validar(String host, int port, PrecoPayload preco, long timeoutMs) throws IOException {
+        return validarResponse(httpBusinessClient.postJson(host, port, "/validar", preco, timeoutMs));
+    }
+
+    private ValidationClientResult validarResponse(HttpRawClient.HttpCallResult response) throws IOException {
         if (response.statusCode() == 200) {
             return ValidationClientResult.accepted();
         }
