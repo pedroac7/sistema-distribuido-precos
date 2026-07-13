@@ -15,7 +15,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public class GatewayService {
-    private static final long VALIDATION_TIMEOUT_MS = 1500L;
+    private static final long VALIDATION_TIMEOUT_MS = 2000L;
     private static final int SOCKET_TIMEOUT_MS = (int) VALIDATION_TIMEOUT_MS;
 
     private final long epsilonMillis;

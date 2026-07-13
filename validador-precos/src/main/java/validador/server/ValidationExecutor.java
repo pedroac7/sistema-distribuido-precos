@@ -18,7 +18,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 final class ValidationExecutor {
     static final int VALIDATION_WORKER_POOL_SIZE = 15;
     static final int VALIDATION_QUEUE_CAPACITY = 40;
-    static final int VALIDATION_RESULT_TIMEOUT_MS = 1500;
+    static final int VALIDATION_RESULT_TIMEOUT_MS = 2000;
 
     private final ThreadPoolExecutor workerPool;
 
@@ -27,12 +27,16 @@ final class ValidationExecutor {
     }
 
     ValidationExecutor(String threadNamePrefix, int workerPoolSize) {
+        this(threadNamePrefix, workerPoolSize, VALIDATION_QUEUE_CAPACITY);
+    }
+
+    ValidationExecutor(String threadNamePrefix, int workerPoolSize, int queueCapacity) {
         this.workerPool = new ThreadPoolExecutor(
                 workerPoolSize,
                 workerPoolSize,
                 0L,
                 TimeUnit.MILLISECONDS,
-                new ArrayBlockingQueue<>(VALIDATION_QUEUE_CAPACITY),
+                new ArrayBlockingQueue<>(queueCapacity),
                 namedThreadFactory(threadNamePrefix),
                 new ThreadPoolExecutor.AbortPolicy());
     }

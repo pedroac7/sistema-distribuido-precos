@@ -44,7 +44,7 @@ class TcpValidadorServerTest {
         assertEquals(64, privateStaticInt("CONNECTION_QUEUE_CAPACITY"));
         assertEquals(8, privateStaticInt("VALIDATION_WORKER_POOL_SIZE"));
         assertEquals(40, privateStaticInt("VALIDATION_QUEUE_CAPACITY"));
-        assertEquals(1500, privateStaticInt("VALIDATION_RESULT_TIMEOUT_MS"));
+        assertEquals(2000, privateStaticInt("VALIDATION_RESULT_TIMEOUT_MS"));
     }
 
     @Test

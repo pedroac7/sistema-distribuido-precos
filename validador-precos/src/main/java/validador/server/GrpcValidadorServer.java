@@ -14,7 +14,7 @@ import java.io.IOException;
 
 public class GrpcValidadorServer implements ProtocolServer {
     private static final int VALIDATION_WORKER_POOL_SIZE = ValidationExecutor.VALIDATION_WORKER_POOL_SIZE;
-    private static final int VALIDATION_QUEUE_CAPACITY = ValidationExecutor.VALIDATION_QUEUE_CAPACITY;
+    private static final int VALIDATION_QUEUE_CAPACITY = 50;
     private static final int VALIDATION_RESULT_TIMEOUT_MS = ValidationExecutor.VALIDATION_RESULT_TIMEOUT_MS;
 
     private final int businessPort;
@@ -24,7 +24,10 @@ public class GrpcValidadorServer implements ProtocolServer {
     public GrpcValidadorServer(int businessPort, ValidadorService validadorService) {
         this.businessPort = businessPort;
         this.validadorService = validadorService;
-        this.validationExecutor = new ValidationExecutor("validador-grpc-validation");
+        this.validationExecutor = new ValidationExecutor(
+                "validador-grpc-validation",
+                VALIDATION_WORKER_POOL_SIZE,
+                VALIDATION_QUEUE_CAPACITY);
     }
 
     @Override
